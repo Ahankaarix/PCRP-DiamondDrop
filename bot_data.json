@@ -1,0 +1,20 @@
+{
+  "users": {
+    "959692217885294632": {
+      "points": 55,
+      "last_claim": "2025-06-24T08:14:06.350Z",
+      "streak": 1,
+      "total_earned": 55,
+      "total_spent": 0,
+      "inventory": [],
+      "gift_cards_redeemed": []
+    }
+  },
+  "settings": {
+    "daily_reward": 50,
+    "max_streak_multiplier": 3,
+    "conversion_rate": 100,
+    "drop_channel_id": null
+  },
+  "gift_card_requests": {}
+}
