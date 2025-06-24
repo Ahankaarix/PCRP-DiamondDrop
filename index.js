@@ -3168,43 +3168,6 @@ async function cleanupOldPanels() {
     // Function to cleanup ALL bot messages from ALL channels for fresh start
     console.log("🧹 Starting comprehensive channel cleanup...");
     
-    // Clean up expired gift cards and user data first
-    console.log("🧹 Cleaning up expired gift cards and old data...");
-    pointsSystem.cleanupExpiredGiftCards();
-    
-    // Clean up old user-generated gift cards (older than 24 hours)
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    let cleanedCards = 0;
-    
-    for (const [code, card] of Object.entries(pointsSystem.data.generated_gift_cards)) {
-        const cardDate = new Date(card.created_at);
-        if (cardDate < oneDayAgo && (card.status === 'void' || card.status === 'claimed')) {
-            delete pointsSystem.data.generated_gift_cards[code];
-            cleanedCards++;
-        }
-    }
-    
-    if (cleanedCards > 0) {
-        console.log(`🧹 Cleaned up ${cleanedCards} old gift cards from database`);
-        await pointsSystem.saveData();
-    }
-    
-    // Clean up old point drop tickets (older than 7 days)
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    let cleanedTickets = 0;
-    
-    for (const [ticketId, ticket] of Object.entries(pointDropTickets)) {
-        const ticketDate = new Date(ticket.createdAt);
-        if (ticketDate < sevenDaysAgo) {
-            delete pointDropTickets[ticketId];
-            cleanedTickets++;
-        }
-    }
-    
-    if (cleanedTickets > 0) {
-        console.log(`🧹 Cleaned up ${cleanedTickets} old point drop tickets`);
-    }
-    
     const channels = [
         CHANNELS.daily_claims,
         CHANNELS.gambling,
