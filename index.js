@@ -29,11 +29,19 @@ const CHANNELS = {
 
 // Admin role configuration
 const ADMIN_ROLE_ID = '1210529712926105661';
+const ADMIN_USER_IDS = ['959692217885294632', '879396413010743337', '1054207830292447324'];
 
 // Function to check if user has admin role
 function hasAdminRole(interaction) {
     if (!interaction.member) return false;
-    return interaction.member.roles.cache.has(ADMIN_ROLE_ID);
+    
+    // Check if user has admin role
+    if (interaction.member.roles.cache.has(ADMIN_ROLE_ID)) {
+        return true;
+    }
+    
+    // Check if user is in admin user IDs list
+    return ADMIN_USER_IDS.includes(interaction.user.id);
 }
 
 // Gift card options
