@@ -3497,6 +3497,14 @@ async function showUserCommands(interaction) {
                 await reply.delete();
             } catch (error) {
                 console.log(
+                    "Could not delete user commands information:",
+                    error.message,
+                );
+            }
+        },
+        5 * 60 * 1000,
+    ); // 5 minutes
+}
 
 async function handleUnoTicketJoin(interaction, ticketId) {
     const ticket = unoTickets.get(ticketId);
@@ -5306,16 +5314,15 @@ async function sendSystemCommandsPanel() {
                 inline: false,
             },
             {
-                name: "📊 **Channel Layout & Permissions**",
+                name: "📊 **Channel Layout**",
                 value:
                     `**Public Channels:**\n` +
                     `💎 Daily Claims | 🎲 Gambling | 🎁 Gift Cards\n` +
                     `🏆 Leaderboard | 📊 Transfers | ℹ️ Information\n\n` +
-                    `**Restricted Channels:**\n` +
-                    `🎯 Point Drops (User IDs: 879396413010743337, 959692217885294632, 1054207830292447324)\n` +
+                    `**Special Channels:**\n` +
+                    `🎯 Point Drops (Restricted access)\n` +
                     `🛡️ Admin Panel (Admin role required)\n` +
-                    `🃏 UNO Gaming (Channel ID: 1387168027027574875)\n\n` +
-                    `**Bot Token:** MTM4NjM2MzcyNjM0MDQyMzgyMQ.Gp3OsC.BECnvKXhPYRztgeRdntR_gjiJK7-lyjjDhpkfI`,
+                    `🃏 UNO Gaming (Designated channel)`,
                 inline: false,
             },
         );
@@ -5447,9 +5454,9 @@ async function sendInfoPanel() {
     const infoChannel = client.channels.cache.get(CHANNELS.information);
     if (infoChannel) {
         const embed = new EmbedBuilder()
-            .setTitle("ℹ️ Diamond Points Bot Information Center")
+            .setTitle("ℹ️ Diamond Points Bot Information")
             .setDescription(
-                `**Welcome to the Complete Bot Guide!**\n\`\`\`\n    ℹ️ HELP CENTER ℹ️\n  ╔═══════════════════╗\n  ║ 📖 USER COMMANDS  ║\n  ║ 🛡️ ADMIN COMMANDS ║\n  ║ 💎 BOT FEATURES   ║\n  ╚═══════════════════╝\n\`\`\`\n\n**Quick Start Guide:**\n💎 **New Users:** Start with \`/claim_daily\` in <#${CHANNELS.daily_claims}>\n🎲 **Gaming:** Visit <#${CHANNELS.gambling}> for casino games\n🎁 **Rewards:** Use <#${CHANNELS.gift_cards}> to redeem prizes\n🏆 **Rankings:** Check <#${CHANNELS.leaderboard}> for top players\n\n**Bot Economy:**\n• Base Daily Reward: 50 💎\n• Streak Multiplier: Up to 3x\n• Gift Card Range: 500-100,000 💎\n• Conversion Rate: 100 💎 = 1 Rupee\n\n**Commands Available:**\n• \`/info\` - Show this panel\n• Use buttons below for detailed command lists\n\nClick a button below to view command details!`,
+                `**Welcome to the Diamond Bot!**\n\`\`\`\n    ℹ️ HELP CENTER ℹ️\n  ╔═══════════════════╗\n  ║ 💎 DIAMOND SYSTEM ║\n  ║ 🎮 GAMES & REWARDS ║\n  ╚═══════════════════╝\n\`\`\`\n\n**How to Start:**\n💎 **Daily Claims:** Use \`/claim_daily\` to earn diamonds\n🎲 **Casino Games:** Try your luck with dice, coinflip, and slots\n🎁 **Gift Cards:** Convert diamonds to rewards\n🏆 **Leaderboard:** Compete with other players\n\n**Basic Commands:**\n• \`/claim_daily\` - Get daily diamonds\n• \`/gambling_menu\` - Play casino games\n• \`/leaderboard\` - View rankings\n• \`/get_points\` - Check your balance\n\nClick the buttons below for more command details!`,
             )
             .setColor(0x00bfff);
 
