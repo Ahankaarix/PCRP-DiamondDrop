@@ -3878,6 +3878,12 @@ async function showUserCommands(interaction) {
                 console.log(
                     "Could not delete user commands information:",
                     error.message,
+                );
+            }
+        },
+        5 * 60 * 1000,
+    ); // 5 minutes
+}
 
 async function handleUnoAIModeSelect(interaction) {
     const selectedMode = interaction.values[0];
