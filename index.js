@@ -400,19 +400,23 @@ client.once("ready", async () => {
         new SlashCommandBuilder()
             .setName("approve_point_drop")
             .setDescription("Admin: Approve a point drop ticket")
-            .addStringOption(option =>
-                option.setName("ticket_id")
+            .addStringOption((option) =>
+                option
+                    .setName("ticket_id")
                     .setDescription("Ticket ID to approve")
-                    .setRequired(true))
+                    .setRequired(true),
+            )
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
         new SlashCommandBuilder()
             .setName("reject_point_drop")
             .setDescription("Admin: Reject a point drop ticket")
-            .addStringOption(option =>
-                option.setName("ticket_id")
+            .addStringOption((option) =>
+                option
+                    .setName("ticket_id")
                     .setDescription("Ticket ID to reject")
-                    .setRequired(true))
+                    .setRequired(true),
+            )
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
     ];
 
@@ -617,9 +621,14 @@ async function handleButtonInteraction(interaction) {
                 if (interaction.channelId !== CHANNELS.point_drops) {
                     const embed = new EmbedBuilder()
                         .setTitle("❌ Wrong Channel")
-                        .setDescription(`Please use this button in <#${CHANNELS.point_drops}>`)
+                        .setDescription(
+                            `Please use this button in <#${CHANNELS.point_drops}>`,
+                        )
                         .setColor(0xff0000);
-                    return await interaction.reply({ embeds: [embed], ephemeral: true });
+                    return await interaction.reply({
+                        embeds: [embed],
+                        ephemeral: true,
+                    });
                 }
                 await showPointDropTicketModal(interaction);
                 break;
@@ -1435,18 +1444,20 @@ async function handleDropPoints(interaction) {
     if (!dropChannel) {
         return await interaction.reply({
             content: "❌ Point drops channel not found!",
-            ephemeral: true
+            ephemeral: true,
         });
     }
 
     const embed = new EmbedBuilder()
         .setTitle("💎 Diamond Mining Event Starting!")
-        .setDescription(`**💎 DIAMOND MINING 💎**\n\`\`\`\n     💎💎💎\n    ╱ ╲ ╱ ╲\n   ╱   ╲   ╲\n  ╱_____╲___╲\n\`\`\`\n\n⏰ **Mining starts in 5 seconds!**\n💰 **Reward:** 10 💎 per claim\n⏱️ **Duration:** 60 seconds\n🎯 **Get ready to mine diamonds!**`)
+        .setDescription(
+            `**💎 DIAMOND MINING 💎**\n\`\`\`\n     💎💎💎\n    ╱ ╲ ╱ ╲\n   ╱   ╲   ╲\n  ╱_____╲___╲\n\`\`\`\n\n⏰ **Mining starts in 5 seconds!**\n💰 **Reward:** 10 💎 per claim\n⏱️ **Duration:** 60 seconds\n🎯 **Get ready to mine diamonds!**`,
+        )
         .setColor(0xffd700)
         .setTimestamp();
 
     const message = await dropChannel.send({ embeds: [embed] });
-    
+
     // Start countdown after 5 seconds
     setTimeout(async () => {
         await startDiamondMining(message, dropChannel);
@@ -1454,7 +1465,7 @@ async function handleDropPoints(interaction) {
 
     await interaction.reply({
         content: `✅ Diamond mining event started in <#${CHANNELS.point_drops}>!`,
-        ephemeral: true
+        ephemeral: true,
     });
 }
 
@@ -2174,14 +2185,14 @@ async function handleApprovePointDrop(interaction) {
     if (!ticket) {
         return await interaction.reply({
             content: `❌ Ticket \`${ticketId}\` not found!`,
-            ephemeral: true
+            ephemeral: true,
         });
     }
 
     if (ticket.status !== "pending") {
         return await interaction.reply({
             content: `❌ Ticket \`${ticketId}\` has already been ${ticket.status}!`,
-            ephemeral: true
+            ephemeral: true,
         });
     }
 
@@ -2194,7 +2205,9 @@ async function handleApprovePointDrop(interaction) {
         const user = await client.users.fetch(ticket.userId);
         const userEmbed = new EmbedBuilder()
             .setTitle("🎯 Point Drop Ticket Approved!")
-            .setDescription(`**Ticket ID:** \`${ticketId}\`\n**Event Title:** ${ticket.title}\n\n✅ **Approved!** Your point drop event will be scheduled soon.`)
+            .setDescription(
+                `**Ticket ID:** \`${ticketId}\`\n**Event Title:** ${ticket.title}\n\n✅ **Approved!** Your point drop event will be scheduled soon.`,
+            )
             .setColor(0x00ff00);
         await user.send({ embeds: [userEmbed] });
     } catch (error) {
@@ -2203,7 +2216,7 @@ async function handleApprovePointDrop(interaction) {
 
     await interaction.reply({
         content: `✅ Ticket \`${ticketId}\` approved successfully!`,
-        ephemeral: true
+        ephemeral: true,
     });
 }
 
@@ -2222,14 +2235,14 @@ async function handleRejectPointDrop(interaction) {
     if (!ticket) {
         return await interaction.reply({
             content: `❌ Ticket \`${ticketId}\` not found!`,
-            ephemeral: true
+            ephemeral: true,
         });
     }
 
     if (ticket.status !== "pending") {
         return await interaction.reply({
             content: `❌ Ticket \`${ticketId}\` has already been ${ticket.status}!`,
-            ephemeral: true
+            ephemeral: true,
         });
     }
 
@@ -2242,7 +2255,9 @@ async function handleRejectPointDrop(interaction) {
         const user = await client.users.fetch(ticket.userId);
         const userEmbed = new EmbedBuilder()
             .setTitle("🎯 Point Drop Ticket Rejected")
-            .setDescription(`**Ticket ID:** \`${ticketId}\`\n**Event Title:** ${ticket.title}\n\n❌ **Rejected.** Please try again with a different request.`)
+            .setDescription(
+                `**Ticket ID:** \`${ticketId}\`\n**Event Title:** ${ticket.title}\n\n❌ **Rejected.** Please try again with a different request.`,
+            )
             .setColor(0xff0000);
         await user.send({ embeds: [userEmbed] });
     } catch (error) {
@@ -2251,7 +2266,7 @@ async function handleRejectPointDrop(interaction) {
 
     await interaction.reply({
         content: `❌ Ticket \`${ticketId}\` rejected.`,
-        ephemeral: true
+        ephemeral: true,
     });
 }
 
@@ -2354,7 +2369,7 @@ async function showAdminCommands(interaction) {
 let pointDropTickets = {}; // Store tickets in memory
 
 function generateTicketId() {
-    return 'PD-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+    return "PD-" + Math.random().toString(36).substring(2, 10).toUpperCase();
 }
 
 function createPointDropTicketButtons() {
@@ -2373,7 +2388,7 @@ function createPointDropTicketButtons() {
             .setCustomId("check_ticket_status")
             .setLabel("🔍 Check Ticket Status")
             .setStyle(ButtonStyle.Success)
-            .setEmoji("📊")
+            .setEmoji("📊"),
     );
 
     const row2 = new ActionRowBuilder().addComponents(
@@ -2381,7 +2396,7 @@ function createPointDropTicketButtons() {
             .setCustomId("point_drop_history")
             .setLabel("📋 My Drop History")
             .setStyle(ButtonStyle.Secondary)
-            .setEmoji("📚")
+            .setEmoji("📚"),
     );
 
     return [row1, row2];
@@ -2437,7 +2452,7 @@ async function showPointDropTicketModal(interaction) {
         new ActionRowBuilder().addComponents(diamondInput),
         new ActionRowBuilder().addComponents(durationInput),
         new ActionRowBuilder().addComponents(descriptionInput),
-        new ActionRowBuilder().addComponents(reasonInput)
+        new ActionRowBuilder().addComponents(reasonInput),
     );
 
     await interaction.showModal(modal);
@@ -2445,23 +2460,28 @@ async function showPointDropTicketModal(interaction) {
 
 async function handlePointDropTicketSubmission(interaction) {
     const title = interaction.fields.getTextInputValue("event_title");
-    const diamondAmount = parseInt(interaction.fields.getTextInputValue("diamond_amount"));
-    const duration = parseInt(interaction.fields.getTextInputValue("event_duration"));
-    const description = interaction.fields.getTextInputValue("event_description");
+    const diamondAmount = parseInt(
+        interaction.fields.getTextInputValue("diamond_amount"),
+    );
+    const duration = parseInt(
+        interaction.fields.getTextInputValue("event_duration"),
+    );
+    const description =
+        interaction.fields.getTextInputValue("event_description");
     const reason = interaction.fields.getTextInputValue("drop_reason");
 
     // Validation
     if (isNaN(diamondAmount) || diamondAmount < 100 || diamondAmount > 10000) {
         return await interaction.reply({
             content: "❌ Diamond amount must be between 100 and 10,000!",
-            ephemeral: true
+            ephemeral: true,
         });
     }
 
     if (isNaN(duration) || duration < 1 || duration > 60) {
         return await interaction.reply({
             content: "❌ Duration must be between 1 and 60 minutes!",
-            ephemeral: true
+            ephemeral: true,
         });
     }
 
@@ -2477,23 +2497,35 @@ async function handlePointDropTicketSubmission(interaction) {
         status: "pending",
         createdAt: new Date().toISOString(),
         reviewedBy: null,
-        reviewedAt: null
+        reviewedAt: null,
     };
 
     pointDropTickets[ticketId] = ticket;
 
     // Send ticket to admin verification channel
-    const adminChannel = client.channels.cache.get(CHANNELS.gift_card_verification);
+    const adminChannel = client.channels.cache.get(
+        CHANNELS.gift_card_verification,
+    );
     if (adminChannel) {
         const adminEmbed = new EmbedBuilder()
             .setTitle("🎯 New Point Drop Ticket Request")
-            .setDescription(`**Ticket ID:** \`${ticketId}\`\n**Requested by:** ${interaction.user}\n**User ID:** ${interaction.user.id}`)
+            .setDescription(
+                `**Ticket ID:** \`${ticketId}\`\n**Requested by:** ${interaction.user}\n**User ID:** ${interaction.user.id}`,
+            )
             .addFields(
                 { name: "🎯 Event Title", value: title, inline: false },
-                { name: "💎 Diamond Amount", value: `${diamondAmount.toLocaleString()} 💎`, inline: true },
-                { name: "⏱️ Duration", value: `${duration} minutes`, inline: true },
+                {
+                    name: "💎 Diamond Amount",
+                    value: `${diamondAmount.toLocaleString()} 💎`,
+                    inline: true,
+                },
+                {
+                    name: "⏱️ Duration",
+                    value: `${duration} minutes`,
+                    inline: true,
+                },
                 { name: "📝 Description", value: description, inline: false },
-                { name: "❓ Reason", value: reason, inline: false }
+                { name: "❓ Reason", value: reason, inline: false },
             )
             .setColor(0xffaa00)
             .setTimestamp();
@@ -2508,16 +2540,21 @@ async function handlePointDropTicketSubmission(interaction) {
                 .setCustomId(`reject_ticket_${ticketId}`)
                 .setLabel("❌ Reject")
                 .setStyle(ButtonStyle.Danger)
-                .setEmoji("❌")
+                .setEmoji("❌"),
         );
 
-        await adminChannel.send({ embeds: [adminEmbed], components: [adminButtons] });
+        await adminChannel.send({
+            embeds: [adminEmbed],
+            components: [adminButtons],
+        });
     }
 
     // Confirm submission to user
     const confirmEmbed = new EmbedBuilder()
         .setTitle("🎫 Point Drop Ticket Submitted!")
-        .setDescription(`**Ticket ID:** \`${ticketId}\`\n\n**Event Title:** ${title}\n**Diamond Amount:** ${diamondAmount.toLocaleString()} 💎\n**Duration:** ${duration} minutes\n\n**Status:** 🟡 Pending Review\n\nYour point drop request has been submitted to the admin team for review. You'll receive a notification when it's processed.`)
+        .setDescription(
+            `**Ticket ID:** \`${ticketId}\`\n\n**Event Title:** ${title}\n**Diamond Amount:** ${diamondAmount.toLocaleString()} 💎\n**Duration:** ${duration} minutes\n\n**Status:** 🟡 Pending Review\n\nYour point drop request has been submitted to the admin team for review. You'll receive a notification when it's processed.`,
+        )
         .setColor(0x00ff00)
         .setTimestamp();
 
@@ -2528,7 +2565,7 @@ async function handleTicketApproval(interaction, ticketId, approved) {
     if (!hasAdminRole(interaction)) {
         return await interaction.reply({
             content: "❌ You don't have permission to review tickets!",
-            ephemeral: true
+            ephemeral: true,
         });
     }
 
@@ -2536,7 +2573,7 @@ async function handleTicketApproval(interaction, ticketId, approved) {
     if (!ticket) {
         return await interaction.reply({
             content: "❌ Ticket not found!",
-            ephemeral: true
+            ephemeral: true,
         });
     }
 
@@ -2546,13 +2583,27 @@ async function handleTicketApproval(interaction, ticketId, approved) {
 
     // Update the admin message
     const embed = new EmbedBuilder()
-        .setTitle(`🎯 Point Drop Ticket ${approved ? 'Approved' : 'Rejected'}`)
-        .setDescription(`**Ticket ID:** \`${ticketId}\`\n**Status:** ${approved ? '✅ Approved' : '❌ Rejected'}\n**Reviewed by:** ${interaction.user}`)
+        .setTitle(`🎯 Point Drop Ticket ${approved ? "Approved" : "Rejected"}`)
+        .setDescription(
+            `**Ticket ID:** \`${ticketId}\`\n**Status:** ${approved ? "✅ Approved" : "❌ Rejected"}\n**Reviewed by:** ${interaction.user}`,
+        )
         .addFields(
             { name: "🎯 Event Title", value: ticket.title, inline: false },
-            { name: "💎 Diamond Amount", value: `${ticket.diamondAmount.toLocaleString()} 💎`, inline: true },
-            { name: "⏱️ Duration", value: `${ticket.duration} minutes`, inline: true },
-            { name: "📝 Description", value: ticket.description, inline: false }
+            {
+                name: "💎 Diamond Amount",
+                value: `${ticket.diamondAmount.toLocaleString()} 💎`,
+                inline: true,
+            },
+            {
+                name: "⏱️ Duration",
+                value: `${ticket.duration} minutes`,
+                inline: true,
+            },
+            {
+                name: "📝 Description",
+                value: ticket.description,
+                inline: false,
+            },
         )
         .setColor(approved ? 0x00ff00 : 0xff0000)
         .setTimestamp();
@@ -2566,15 +2617,23 @@ async function handleTicketApproval(interaction, ticketId, approved) {
             setTimeout(async () => {
                 const miningEmbed = new EmbedBuilder()
                     .setTitle("💎 Diamond Mining Event - Ticket Approved!")
-                    .setDescription(`**🎫 Ticket:** \`${ticketId}\`\n**Event:** ${ticket.title}\n\n**💎 DIAMOND MINING 💎**\n\`\`\`\n     ⛏️💎⛏️\n    ╱ ╲ ╱ ╲\n   ╱   ╲   ╲\n  ╱_____╲___╲\n\`\`\`\n\n⏰ **Mining starts in 10 seconds!**\n💰 **Reward:** ${Math.floor(ticket.diamondAmount / 20)} 💎 per claim\n⏱️ **Duration:** ${ticket.duration} minutes\n🎯 **Event approved and starting soon!**`)
+                    .setDescription(
+                        `**🎫 Ticket:** \`${ticketId}\`\n**Event:** ${ticket.title}\n\n**💎 DIAMOND MINING 💎**\n\`\`\`\n     ⛏️💎⛏️\n    ╱ ╲ ╱ ╲\n   ╱   ╲   ╲\n  ╱_____╲___╲\n\`\`\`\n\n⏰ **Mining starts in 10 seconds!**\n💰 **Reward:** ${Math.floor(ticket.diamondAmount / 20)} 💎 per claim\n⏱️ **Duration:** ${ticket.duration} minutes\n🎯 **Event approved and starting soon!**`,
+                    )
                     .setColor(0xffd700)
                     .setTimestamp();
 
-                const message = await dropChannel.send({ embeds: [miningEmbed] });
-                
+                const message = await dropChannel.send({
+                    embeds: [miningEmbed],
+                });
+
                 // Start mining after 10 seconds
                 setTimeout(async () => {
-                    await startCustomDiamondMining(message, dropChannel, ticket);
+                    await startCustomDiamondMining(
+                        message,
+                        dropChannel,
+                        ticket,
+                    );
                 }, 10000);
             }, 5000);
         }
@@ -2584,8 +2643,12 @@ async function handleTicketApproval(interaction, ticketId, approved) {
     try {
         const user = await client.users.fetch(ticket.userId);
         const userEmbed = new EmbedBuilder()
-            .setTitle(`🎯 Point Drop Ticket ${approved ? 'Approved' : 'Rejected'}`)
-            .setDescription(`**Ticket ID:** \`${ticketId}\`\n**Event Title:** ${ticket.title}\n\n**Status:** ${approved ? '✅ Approved - Your diamond mining event is starting!' : '❌ Rejected - Please try again with a different request.'}`)
+            .setTitle(
+                `🎯 Point Drop Ticket ${approved ? "Approved" : "Rejected"}`,
+            )
+            .setDescription(
+                `**Ticket ID:** \`${ticketId}\`\n**Event Title:** ${ticket.title}\n\n**Status:** ${approved ? "✅ Approved - Your diamond mining event is starting!" : "❌ Rejected - Please try again with a different request."}`,
+            )
             .setColor(approved ? 0x00ff00 : 0xff0000)
             .setTimestamp();
 
@@ -2609,9 +2672,9 @@ async function startDiamondMining(message, channel) {
         diamondReward: diamondPerClaim,
         totalDiamonds: totalDiamonds,
         remainingDiamonds: totalDiamonds,
-        maxClaims: Math.floor(totalDiamonds / diamondPerClaim)
+        maxClaims: Math.floor(totalDiamonds / diamondPerClaim),
     };
-    
+
     activeMiningEvents.set(eventId, miningData);
 
     const miningButton = new ActionRowBuilder().addComponents(
@@ -2619,12 +2682,14 @@ async function startDiamondMining(message, channel) {
             .setCustomId(`mine_diamonds_${eventId}`)
             .setLabel("⛏️ Mine Diamonds!")
             .setStyle(ButtonStyle.Success)
-            .setEmoji("💎")
+            .setEmoji("💎"),
     );
 
     const startEmbed = new EmbedBuilder()
         .setTitle("💎 DIAMOND MINING ACTIVE! ⛏️")
-        .setDescription(`**💎 DIAMOND MINE 💎**\n\`\`\`\n    ⛏️💎💎💎⛏️\n   ╱ ╲ ╱ ╲ ╱ ╲\n  ╱   ╲   ╲   ╲\n ╱_____╲___╲___╲\n    MINING ZONE\n\`\`\`\n\n⏱️ **Time Remaining:** 60 seconds\n💰 **Reward:** ${diamondPerClaim} 💎 per claim\n💎 **Total Pool:** ${totalDiamonds.toLocaleString()} 💎\n💎 **Remaining:** ${totalDiamonds.toLocaleString()} 💎\n👥 **Active Miners:** 0\n🏆 **Total Claims:** 0 / ${miningData.maxClaims}\n\n**⚡ UNLIMITED CLAIMS! Mine as much as you can until time runs out or diamonds depleted!**`)
+        .setDescription(
+            `**💎 DIAMOND MINE 💎**\n\`\`\`\n    ⛏️💎💎💎⛏️\n   ╱ ╲ ╱ ╲ ╱ ╲\n  ╱   ╲   ╲   ╲\n ╱_____╲___╲___╲\n    MINING ZONE\n\`\`\`\n\n⏱️ **Time Remaining:** 60 seconds\n💰 **Reward:** ${diamondPerClaim} 💎 per claim\n💎 **Total Pool:** ${totalDiamonds.toLocaleString()} 💎\n💎 **Remaining:** ${totalDiamonds.toLocaleString()} 💎\n👥 **Active Miners:** 0\n🏆 **Total Claims:** 0 / ${miningData.maxClaims}\n\n**⚡ UNLIMITED CLAIMS! Mine as much as you can until time runs out or diamonds depleted!**`,
+        )
         .setColor(0x00ff00)
         .setTimestamp();
 
@@ -2633,7 +2698,7 @@ async function startDiamondMining(message, channel) {
     // Start countdown
     const countdownInterval = setInterval(async () => {
         miningData.timeLeft--;
-        
+
         if (miningData.timeLeft <= 0 || miningData.remainingDiamonds <= 0) {
             clearInterval(countdownInterval);
             await endDiamondMining(message, eventId);
@@ -2642,12 +2707,23 @@ async function startDiamondMining(message, channel) {
 
         const countdownEmbed = new EmbedBuilder()
             .setTitle("💎 DIAMOND MINING ACTIVE! ⛏️")
-            .setDescription(`**💎 DIAMOND MINE 💎**\n\`\`\`\n    ⛏️💎💎💎⛏️\n   ╱ ╲ ╱ ╲ ╱ ╲\n  ╱   ╲   ╲   ╲\n ╱_____╲___╲___╲\n    MINING ZONE\n\`\`\`\n\n⏱️ **Time Remaining:** ${miningData.timeLeft} seconds\n💰 **Reward:** ${miningData.diamondReward} 💎 per claim\n💎 **Total Pool:** ${miningData.totalDiamonds.toLocaleString()} 💎\n💎 **Remaining:** ${miningData.remainingDiamonds.toLocaleString()} 💎\n👥 **Active Miners:** ${miningData.participants.size}\n🏆 **Total Claims:** ${miningData.totalClaims} / ${miningData.maxClaims}\n\n**⚡ UNLIMITED CLAIMS! Mine as much as you can until time runs out or diamonds depleted!**`)
-            .setColor(miningData.timeLeft <= 10 ? 0xff0000 : (miningData.remainingDiamonds <= 100 ? 0xffaa00 : 0x00ff00))
+            .setDescription(
+                `**💎 DIAMOND MINE 💎**\n\`\`\`\n    ⛏️💎💎💎⛏️\n   ╱ ╲ ╱ ╲ ╱ ╲\n  ╱   ╲   ╲   ╲\n ╱_____╲___╲___╲\n    MINING ZONE\n\`\`\`\n\n⏱️ **Time Remaining:** ${miningData.timeLeft} seconds\n💰 **Reward:** ${miningData.diamondReward} 💎 per claim\n💎 **Total Pool:** ${miningData.totalDiamonds.toLocaleString()} 💎\n💎 **Remaining:** ${miningData.remainingDiamonds.toLocaleString()} 💎\n👥 **Active Miners:** ${miningData.participants.size}\n🏆 **Total Claims:** ${miningData.totalClaims} / ${miningData.maxClaims}\n\n**⚡ UNLIMITED CLAIMS! Mine as much as you can until time runs out or diamonds depleted!**`,
+            )
+            .setColor(
+                miningData.timeLeft <= 10
+                    ? 0xff0000
+                    : miningData.remainingDiamonds <= 100
+                      ? 0xffaa00
+                      : 0x00ff00,
+            )
             .setTimestamp();
 
         try {
-            await message.edit({ embeds: [countdownEmbed], components: [miningButton] });
+            await message.edit({
+                embeds: [countdownEmbed],
+                components: [miningButton],
+            });
         } catch (error) {
             console.log("Could not update mining countdown:", error.message);
         }
@@ -2665,9 +2741,9 @@ async function startCustomDiamondMining(message, channel, ticket) {
         totalDiamonds: ticket.diamondAmount,
         remainingDiamonds: ticket.diamondAmount,
         maxClaims: Math.floor(ticket.diamondAmount / diamondPerClaim),
-        ticketId: ticket.id
+        ticketId: ticket.id,
     };
-    
+
     activeMiningEvents.set(eventId, miningData);
 
     const miningButton = new ActionRowBuilder().addComponents(
@@ -2675,12 +2751,14 @@ async function startCustomDiamondMining(message, channel, ticket) {
             .setCustomId(`mine_diamonds_${eventId}`)
             .setLabel("⛏️ Mine Diamonds!")
             .setStyle(ButtonStyle.Success)
-            .setEmoji("💎")
+            .setEmoji("💎"),
     );
 
     const startEmbed = new EmbedBuilder()
         .setTitle(`💎 ${ticket.title} - DIAMOND MINING! ⛏️`)
-        .setDescription(`**💎 CUSTOM DIAMOND MINE 💎**\n\`\`\`\n    ⛏️💎💎💎⛏️\n   ╱ ╲ ╱ ╲ ╱ ╲\n  ╱   ╲   ╲   ╲\n ╱_____╲___╲___╲\n   ${ticket.title.substring(0, 13).toUpperCase()}\n\`\`\`\n\n⏱️ **Time Remaining:** ${ticket.duration} minutes\n💰 **Reward:** ${diamondPerClaim} 💎 per claim\n💎 **Total Pool:** ${ticket.diamondAmount.toLocaleString()} 💎\n💎 **Remaining:** ${ticket.diamondAmount.toLocaleString()} 💎\n🎫 **Event:** ${ticket.title}\n👥 **Active Miners:** 0\n🏆 **Total Claims:** 0 / ${miningData.maxClaims}\n\n**⚡ UNLIMITED CLAIMS! Mine continuously until time runs out or diamonds depleted!**`)
+        .setDescription(
+            `**💎 CUSTOM DIAMOND MINE 💎**\n\`\`\`\n    ⛏️💎💎💎⛏️\n   ╱ ╲ ╱ ╲ ╱ ╲\n  ╱   ╲   ╲   ╲\n ╱_____╲___╲___╲\n   ${ticket.title.substring(0, 13).toUpperCase()}\n\`\`\`\n\n⏱️ **Time Remaining:** ${ticket.duration} minutes\n💰 **Reward:** ${diamondPerClaim} 💎 per claim\n💎 **Total Pool:** ${ticket.diamondAmount.toLocaleString()} 💎\n💎 **Remaining:** ${ticket.diamondAmount.toLocaleString()} 💎\n🎫 **Event:** ${ticket.title}\n👥 **Active Miners:** 0\n🏆 **Total Claims:** 0 / ${miningData.maxClaims}\n\n**⚡ UNLIMITED CLAIMS! Mine continuously until time runs out or diamonds depleted!**`,
+        )
         .setColor(0x00ff00)
         .setTimestamp();
 
@@ -2689,7 +2767,7 @@ async function startCustomDiamondMining(message, channel, ticket) {
     // Start countdown
     const countdownInterval = setInterval(async () => {
         miningData.timeLeft--;
-        
+
         if (miningData.timeLeft <= 0 || miningData.remainingDiamonds <= 0) {
             clearInterval(countdownInterval);
             await endCustomDiamondMining(message, eventId, ticket);
@@ -2698,18 +2776,34 @@ async function startCustomDiamondMining(message, channel, ticket) {
 
         const minutes = Math.floor(miningData.timeLeft / 60);
         const seconds = miningData.timeLeft % 60;
-        const timeDisplay = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+        const timeDisplay =
+            minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 
         const countdownEmbed = new EmbedBuilder()
             .setTitle(`💎 ${ticket.title} - DIAMOND MINING! ⛏️`)
-            .setDescription(`**💎 CUSTOM DIAMOND MINE 💎**\n\`\`\`\n    ⛏️💎💎💎⛏️\n   ╱ ╲ ╱ ╲ ╱ ╲\n  ╱   ╲   ╲   ╲\n ╱_____╲___╲___╲\n   ${ticket.title.substring(0, 13).toUpperCase()}\n\`\`\`\n\n⏱️ **Time Remaining:** ${timeDisplay}\n💰 **Reward:** ${miningData.diamondReward} 💎 per claim\n💎 **Total Pool:** ${miningData.totalDiamonds.toLocaleString()} 💎\n💎 **Remaining:** ${miningData.remainingDiamonds.toLocaleString()} 💎\n🎫 **Event:** ${ticket.title}\n👥 **Active Miners:** ${miningData.participants.size}\n🏆 **Total Claims:** ${miningData.totalClaims} / ${miningData.maxClaims}\n\n**⚡ UNLIMITED CLAIMS! Mine continuously until time runs out or diamonds depleted!**`)
-            .setColor(miningData.timeLeft <= 30 ? 0xff0000 : (miningData.remainingDiamonds <= (miningData.totalDiamonds * 0.1) ? 0xffaa00 : 0x00ff00))
+            .setDescription(
+                `**💎 CUSTOM DIAMOND MINE 💎**\n\`\`\`\n    ⛏️💎💎💎⛏️\n   ╱ ╲ ╱ ╲ ╱ ╲\n  ╱   ╲   ╲   ╲\n ╱_____╲___╲___╲\n   ${ticket.title.substring(0, 13).toUpperCase()}\n\`\`\`\n\n⏱️ **Time Remaining:** ${timeDisplay}\n💰 **Reward:** ${miningData.diamondReward} 💎 per claim\n💎 **Total Pool:** ${miningData.totalDiamonds.toLocaleString()} 💎\n💎 **Remaining:** ${miningData.remainingDiamonds.toLocaleString()} 💎\n🎫 **Event:** ${ticket.title}\n👥 **Active Miners:** ${miningData.participants.size}\n🏆 **Total Claims:** ${miningData.totalClaims} / ${miningData.maxClaims}\n\n**⚡ UNLIMITED CLAIMS! Mine continuously until time runs out or diamonds depleted!**`,
+            )
+            .setColor(
+                miningData.timeLeft <= 30
+                    ? 0xff0000
+                    : miningData.remainingDiamonds <=
+                        miningData.totalDiamonds * 0.1
+                      ? 0xffaa00
+                      : 0x00ff00,
+            )
             .setTimestamp();
 
         try {
-            await message.edit({ embeds: [countdownEmbed], components: [miningButton] });
+            await message.edit({
+                embeds: [countdownEmbed],
+                components: [miningButton],
+            });
         } catch (error) {
-            console.log("Could not update custom mining countdown:", error.message);
+            console.log(
+                "Could not update custom mining countdown:",
+                error.message,
+            );
         }
     }, 1000);
 }
@@ -2718,12 +2812,16 @@ async function endDiamondMining(message, eventId) {
     const miningData = activeMiningEvents.get(eventId);
     if (!miningData) return;
 
-    const diamondsDistributed = miningData.totalDiamonds - miningData.remainingDiamonds;
-    const endReason = miningData.remainingDiamonds <= 0 ? "All diamonds mined!" : "Time expired!";
-    
+    const diamondsDistributed =
+        miningData.totalDiamonds - miningData.remainingDiamonds;
+    const endReason =
+        miningData.remainingDiamonds <= 0
+            ? "All diamonds mined!"
+            : "Time expired!";
+
     // Calculate top miners
     const topMiners = Array.from(miningData.participants.entries())
-        .sort(([,a], [,b]) => b - a)
+        .sort(([, a], [, b]) => b - a)
         .slice(0, 3);
 
     let topMinersText = "";
@@ -2743,7 +2841,9 @@ async function endDiamondMining(message, eventId) {
 
     const finalEmbed = new EmbedBuilder()
         .setTitle("💎 DIAMOND MINING COMPLETED! ⛏️")
-        .setDescription(`**💎 MINING RESULTS 💎**\n\`\`\`\n    ⛏️💎💎💎⛏️\n   ╱ ╲ ╱ ╲ ╱ ╲\n  ╱   ╲   ╲   ╲\n ╱_____╲___╲___╲\n    MINE CLOSED\n\`\`\`\n\n⏰ **Event Status:** ${endReason}\n👥 **Total Miners:** ${miningData.participants.size}\n🏆 **Total Claims:** ${miningData.totalClaims}\n💎 **Total Pool:** ${miningData.totalDiamonds.toLocaleString()} 💎\n💎 **Diamonds Distributed:** ${diamondsDistributed.toLocaleString()} 💎\n💎 **Remaining:** ${miningData.remainingDiamonds.toLocaleString()} 💎${topMinersText}\n\n**Thanks for participating in the diamond mining event!**`)
+        .setDescription(
+            `**💎 MINING RESULTS 💎**\n\`\`\`\n    ⛏️💎💎💎⛏️\n   ╱ ╲ ╱ ╲ ╱ ╲\n  ╱   ╲   ╲   ╲\n ╱_____╲___╲___╲\n    MINE CLOSED\n\`\`\`\n\n⏰ **Event Status:** ${endReason}\n👥 **Total Miners:** ${miningData.participants.size}\n🏆 **Total Claims:** ${miningData.totalClaims}\n💎 **Total Pool:** ${miningData.totalDiamonds.toLocaleString()} 💎\n💎 **Diamonds Distributed:** ${diamondsDistributed.toLocaleString()} 💎\n💎 **Remaining:** ${miningData.remainingDiamonds.toLocaleString()} 💎${topMinersText}\n\n**Thanks for participating in the diamond mining event!**`,
+        )
         .setColor(0x808080)
         .setTimestamp();
 
@@ -2755,12 +2855,16 @@ async function endCustomDiamondMining(message, eventId, ticket) {
     const miningData = activeMiningEvents.get(eventId);
     if (!miningData) return;
 
-    const diamondsDistributed = miningData.totalDiamonds - miningData.remainingDiamonds;
-    const endReason = miningData.remainingDiamonds <= 0 ? "All diamonds mined!" : "Time expired!";
-    
+    const diamondsDistributed =
+        miningData.totalDiamonds - miningData.remainingDiamonds;
+    const endReason =
+        miningData.remainingDiamonds <= 0
+            ? "All diamonds mined!"
+            : "Time expired!";
+
     // Calculate top miners
     const topMiners = Array.from(miningData.participants.entries())
-        .sort(([,a], [,b]) => b - a)
+        .sort(([, a], [, b]) => b - a)
         .slice(0, 3);
 
     let topMinersText = "";
@@ -2780,7 +2884,9 @@ async function endCustomDiamondMining(message, eventId, ticket) {
 
     const finalEmbed = new EmbedBuilder()
         .setTitle(`💎 ${ticket.title} - MINING COMPLETED! ⛏️`)
-        .setDescription(`**💎 MINING RESULTS 💎**\n\`\`\`\n    ⛏️💎💎💎⛏️\n   ╱ ╲ ╱ ╲ ╱ ╲\n  ╱   ╲   ╲   ╲\n ╱_____╲___╲___╲\n    MINE CLOSED\n\`\`\`\n\n⏰ **Event Status:** ${endReason}\n🎫 **Event:** ${ticket.title}\n👥 **Total Miners:** ${miningData.participants.size}\n🏆 **Total Claims:** ${miningData.totalClaims}\n💎 **Total Pool:** ${miningData.totalDiamonds.toLocaleString()} 💎\n💎 **Diamonds Distributed:** ${diamondsDistributed.toLocaleString()} 💎\n💎 **Remaining:** ${miningData.remainingDiamonds.toLocaleString()} 💎\n🎯 **Ticket ID:** \`${ticket.id}\`${topMinersText}\n\n**Thanks for participating in this custom diamond mining event!**`)
+        .setDescription(
+            `**💎 MINING RESULTS 💎**\n\`\`\`\n    ⛏️💎💎💎⛏️\n   ╱ ╲ ╱ ╲ ╱ ╲\n  ╱   ╲   ╲   ╲\n ╱_____╲___╲___╲\n    MINE CLOSED\n\`\`\`\n\n⏰ **Event Status:** ${endReason}\n🎫 **Event:** ${ticket.title}\n👥 **Total Miners:** ${miningData.participants.size}\n🏆 **Total Claims:** ${miningData.totalClaims}\n💎 **Total Pool:** ${miningData.totalDiamonds.toLocaleString()} 💎\n💎 **Diamonds Distributed:** ${diamondsDistributed.toLocaleString()} 💎\n💎 **Remaining:** ${miningData.remainingDiamonds.toLocaleString()} 💎\n🎯 **Ticket ID:** \`${ticket.id}\`${topMinersText}\n\n**Thanks for participating in this custom diamond mining event!**`,
+        )
         .setColor(0x808080)
         .setTimestamp();
 
@@ -2796,36 +2902,38 @@ async function showPointDropGuidelines(interaction) {
             {
                 name: "💎 Diamond Range",
                 value: "• Minimum: 100 💎\n• Maximum: 10,000 💎\n• Must be reasonable for event type",
-                inline: true
+                inline: true,
             },
             {
                 name: "⏱️ Duration Limits",
                 value: "• Minimum: 1 minute\n• Maximum: 60 minutes\n• Consider server activity",
-                inline: true
+                inline: true,
             },
             {
                 name: "📝 Event Requirements",
                 value: "• Clear, descriptive title\n• Detailed event description\n• Valid reason for request",
-                inline: false
+                inline: false,
             },
             {
                 name: "✅ Approval Criteria",
                 value: "• Community benefit\n• Reasonable diamond amount\n• Special occasions/events\n• Active server participation",
-                inline: true
+                inline: true,
             },
             {
                 name: "❌ Rejection Reasons",
                 value: "• Excessive diamond requests\n• Insufficient description\n• Too frequent requests\n• Inappropriate content",
-                inline: true
+                inline: true,
             },
             {
                 name: "📊 Process Timeline",
                 value: "• Submission: Instant\n• Review: 1-24 hours\n• Notification: Via DM\n• Event: Scheduled by admin",
-                inline: false
-            }
+                inline: false,
+            },
         )
         .setColor(0x0099ff)
-        .setFooter({ text: "Follow these guidelines for better approval chances!" });
+        .setFooter({
+            text: "Follow these guidelines for better approval chances!",
+        });
 
     await interaction.reply({ embeds: [embed], ephemeral: true });
 }
@@ -2848,13 +2956,17 @@ async function showTicketStatusModal(interaction) {
 }
 
 async function handleTicketStatusCheck(interaction) {
-    const ticketId = interaction.fields.getTextInputValue("ticket_id").toUpperCase();
+    const ticketId = interaction.fields
+        .getTextInputValue("ticket_id")
+        .toUpperCase();
     const ticket = pointDropTickets[ticketId];
 
     if (!ticket) {
         const embed = new EmbedBuilder()
             .setTitle("❌ Ticket Not Found")
-            .setDescription(`**Ticket ID:** \`${ticketId}\`\n\nThis ticket ID doesn't exist in our system.`)
+            .setDescription(
+                `**Ticket ID:** \`${ticketId}\`\n\nThis ticket ID doesn't exist in our system.`,
+            )
             .setColor(0xff0000);
         return await interaction.reply({ embeds: [embed], ephemeral: true });
     }
@@ -2880,12 +2992,26 @@ async function handleTicketStatusCheck(interaction) {
 
     const embed = new EmbedBuilder()
         .setTitle("🔍 Ticket Status Check")
-        .setDescription(`**Ticket ID:** \`${ticketId}\`\n**Status:** ${statusEmoji} ${ticket.status.charAt(0).toUpperCase() + ticket.status.slice(1)}`)
+        .setDescription(
+            `**Ticket ID:** \`${ticketId}\`\n**Status:** ${statusEmoji} ${ticket.status.charAt(0).toUpperCase() + ticket.status.slice(1)}`,
+        )
         .addFields(
             { name: "🎯 Event Title", value: ticket.title, inline: false },
-            { name: "💎 Diamond Amount", value: `${ticket.diamondAmount.toLocaleString()} 💎`, inline: true },
-            { name: "⏱️ Duration", value: `${ticket.duration} minutes`, inline: true },
-            { name: "📅 Submitted", value: `<t:${Math.floor(new Date(ticket.createdAt).getTime() / 1000)}:F>`, inline: false }
+            {
+                name: "💎 Diamond Amount",
+                value: `${ticket.diamondAmount.toLocaleString()} 💎`,
+                inline: true,
+            },
+            {
+                name: "⏱️ Duration",
+                value: `${ticket.duration} minutes`,
+                inline: true,
+            },
+            {
+                name: "📅 Submitted",
+                value: `<t:${Math.floor(new Date(ticket.createdAt).getTime() / 1000)}:F>`,
+                inline: false,
+            },
         )
         .setColor(statusColor)
         .setTimestamp();
@@ -2894,7 +3020,7 @@ async function handleTicketStatusCheck(interaction) {
         embed.addFields({
             name: "👥 Reviewed",
             value: `<t:${Math.floor(new Date(ticket.reviewedAt).getTime() / 1000)}:F>`,
-            inline: true
+            inline: true,
         });
     }
 
@@ -2902,36 +3028,49 @@ async function handleTicketStatusCheck(interaction) {
 }
 
 async function showPointDropHistory(interaction) {
-    const userTickets = Object.values(pointDropTickets).filter(ticket => ticket.userId === interaction.user.id);
-    
+    const userTickets = Object.values(pointDropTickets).filter(
+        (ticket) => ticket.userId === interaction.user.id,
+    );
+
     if (userTickets.length === 0) {
         const embed = new EmbedBuilder()
             .setTitle("📋 Your Point Drop History")
-            .setDescription("You haven't submitted any point drop tickets yet!\n\nClick **Create Point Drop Ticket** to submit your first request.")
+            .setDescription(
+                "You haven't submitted any point drop tickets yet!\n\nClick **Create Point Drop Ticket** to submit your first request.",
+            )
             .setColor(0x0099ff);
         return await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     const embed = new EmbedBuilder()
         .setTitle("📋 Your Point Drop History")
-        .setDescription(`**Total Tickets:** ${userTickets.length}\n\nShowing your last 5 tickets:`)
+        .setDescription(
+            `**Total Tickets:** ${userTickets.length}\n\nShowing your last 5 tickets:`,
+        )
         .setColor(0x0099ff);
 
     const recentTickets = userTickets.slice(-5).reverse();
-    
+
     for (const ticket of recentTickets) {
         let statusEmoji;
         switch (ticket.status) {
-            case "pending": statusEmoji = "🟡"; break;
-            case "approved": statusEmoji = "✅"; break;
-            case "rejected": statusEmoji = "❌"; break;
-            default: statusEmoji = "❓";
+            case "pending":
+                statusEmoji = "🟡";
+                break;
+            case "approved":
+                statusEmoji = "✅";
+                break;
+            case "rejected":
+                statusEmoji = "❌";
+                break;
+            default:
+                statusEmoji = "❓";
         }
 
         embed.addFields({
             name: `${statusEmoji} ${ticket.title}`,
             value: `**ID:** \`${ticket.id}\`\n**Amount:** ${ticket.diamondAmount} 💎\n**Status:** ${ticket.status}\n**Submitted:** <t:${Math.floor(new Date(ticket.createdAt).getTime() / 1000)}:R>`,
-            inline: false
+            inline: false,
         });
     }
 
@@ -2943,17 +3082,18 @@ async function handleDiamondMining(interaction, eventId) {
     if (!miningData) {
         return await interaction.reply({
             content: "❌ This mining event has ended!",
-            ephemeral: true
+            ephemeral: true,
         });
     }
 
     const userId = interaction.user.id;
-    
+
     // Check if diamonds are depleted
     if (miningData.remainingDiamonds < miningData.diamondReward) {
         return await interaction.reply({
-            content: "💎 All diamonds have been mined! This event has no more diamonds available.",
-            ephemeral: true
+            content:
+                "💎 All diamonds have been mined! This event has no more diamonds available.",
+            ephemeral: true,
         });
     }
 
@@ -2982,7 +3122,9 @@ async function sendPointDropTicketPanel() {
     if (pointDropChannel) {
         const embed = new EmbedBuilder()
             .setTitle("🎯 Point Drop Ticket System")
-            .setDescription(`**Request Community Point Drop Events!**\n\`\`\`\n  🎯 POINT DROP SYSTEM 🎯\n╔═══════════════════════════╗\n║ 🎫 Create Event Tickets   ║\n║ 📋 View Guidelines        ║\n║ 🔍 Check Status          ║\n║ 📚 View History          ║\n╚═══════════════════════════╝\n\`\`\`\n\n**How it Works:**\n1. 🎫 **Create Ticket** - Submit your point drop event request\n2. 📋 **Follow Guidelines** - Check requirements for approval\n3. ⏳ **Wait for Review** - Admin team reviews your request\n4. 🎉 **Event Scheduled** - Approved events get scheduled\n\n**Request Requirements:**\n💎 **Diamond Range:** 100 - 10,000 diamonds\n⏱️ **Duration:** 1 - 60 minutes\n📝 **Details:** Title, description, and reason required\n\n**Review Process:**\n• All requests reviewed by admin team\n• Approval based on community benefit\n• Notifications sent via DM\n• Approved events scheduled by admins\n\n**Tips for Approval:**\n✅ Special occasions (holidays, milestones)\n✅ Community engagement events\n✅ Reasonable diamond amounts\n✅ Clear event descriptions\n✅ Valid reasons for request\n\nStart by clicking **Create Point Drop Ticket** below!`)
+            .setDescription(
+                `**Request Community Point Drop Events!**\n\`\`\`\n  🎯 POINT DROP SYSTEM 🎯\n╔═══════════════════════════╗\n║ 🎫 Create Event Tickets   ║\n║ 📋 View Guidelines        ║\n║ 🔍 Check Status          ║\n║ 📚 View History          ║\n╚═══════════════════════════╝\n\`\`\`\n\n**How it Works:**\n1. 🎫 **Create Ticket** - Submit your point drop event request\n2. 📋 **Follow Guidelines** - Check requirements for approval\n3. ⏳ **Wait for Review** - Admin team reviews your request\n4. 🎉 **Event Scheduled** - Approved events get scheduled\n\n**Request Requirements:**\n💎 **Diamond Range:** 100 - 10,000 diamonds\n⏱️ **Duration:** 1 - 60 minutes\n📝 **Details:** Title, description, and reason required\n\n**Review Process:**\n• All requests reviewed by admin team\n• Approval based on community benefit\n• Notifications sent via DM\n• Approved events scheduled by admins\n\n**Tips for Approval:**\n✅ Special occasions (holidays, milestones)\n✅ Community engagement events\n✅ Reasonable diamond amounts\n✅ Clear event descriptions\n✅ Valid reasons for request\n\nStart by clicking **Create Point Drop Ticket** below!`,
+            )
             .setColor(0x00bfff);
 
         const components = createPointDropTicketButtons();
@@ -2996,7 +3138,7 @@ async function sendStartupPanels() {
     console.log("🚀 Bot startup sequence initiated...");
     console.log("🧹 Phase 1: Complete channel cleanup");
     await cleanupOldPanels();
-    
+
     console.log("📋 Phase 2: Deploying fresh panels");
     await sendDailyClaimPanel();
     await sendGamblingPanel();
@@ -3005,8 +3147,10 @@ async function sendStartupPanels() {
     await sendInfoPanel();
     await sendAdminGiftCardPanel();
     await sendPointDropTicketPanel();
-    
-    console.log("✅ Bot startup sequence completed - All systems fresh and operational!");
+
+    console.log(
+        "✅ Bot startup sequence completed - All systems fresh and operational!",
+    );
 }
 
 async function sendDailyClaimPanel() {
@@ -3150,32 +3294,39 @@ async function sendAdminGiftCardPanel() {
 async function cleanupOldPanels() {
     // Function to cleanup ALL bot messages from ALL channels for fresh start
     console.log("🧹 Starting comprehensive channel cleanup...");
-    
+
     // Clean up expired gift cards and user data first
     console.log("🧹 Cleaning up expired gift cards and old data...");
     pointsSystem.cleanupExpiredGiftCards();
-    
+
     // Clean up old user-generated gift cards (older than 24 hours)
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     let cleanedCards = 0;
-    
-    for (const [code, card] of Object.entries(pointsSystem.data.generated_gift_cards)) {
+
+    for (const [code, card] of Object.entries(
+        pointsSystem.data.generated_gift_cards,
+    )) {
         const cardDate = new Date(card.created_at);
-        if (cardDate < oneDayAgo && (card.status === 'void' || card.status === 'claimed')) {
+        if (
+            cardDate < oneDayAgo &&
+            (card.status === "void" || card.status === "claimed")
+        ) {
             delete pointsSystem.data.generated_gift_cards[code];
             cleanedCards++;
         }
     }
-    
+
     if (cleanedCards > 0) {
-        console.log(`🧹 Cleaned up ${cleanedCards} old gift cards from database`);
+        console.log(
+            `🧹 Cleaned up ${cleanedCards} old gift cards from database`,
+        );
         await pointsSystem.saveData();
     }
-    
+
     // Clean up old point drop tickets (older than 7 days)
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     let cleanedTickets = 0;
-    
+
     for (const [ticketId, ticket] of Object.entries(pointDropTickets)) {
         const ticketDate = new Date(ticket.createdAt);
         if (ticketDate < sevenDaysAgo) {
@@ -3183,11 +3334,11 @@ async function cleanupOldPanels() {
             cleanedTickets++;
         }
     }
-    
+
     if (cleanedTickets > 0) {
         console.log(`🧹 Cleaned up ${cleanedTickets} old point drop tickets`);
     }
-    
+
     const channels = [
         CHANNELS.daily_claims,
         CHANNELS.gambling,
@@ -3202,8 +3353,10 @@ async function cleanupOldPanels() {
         const channel = client.channels.cache.get(channelId);
         if (channel) {
             try {
-                console.log(`🧹 Cleaning channel: ${channel.name || channelId}`);
-                
+                console.log(
+                    `🧹 Cleaning channel: ${channel.name || channelId}`,
+                );
+
                 // Fetch more messages to ensure complete cleanup
                 let fetched;
                 do {
@@ -3211,7 +3364,7 @@ async function cleanupOldPanels() {
                     const botMessages = fetched.filter(
                         (msg) => msg.author.id === client.user.id,
                     );
-                    
+
                     if (botMessages.size > 0) {
                         // Split into chunks of 100 for bulk delete (Discord limit)
                         const messageArray = Array.from(botMessages.values());
@@ -3223,10 +3376,11 @@ async function cleanupOldPanels() {
                                 await chunk[0].delete();
                             }
                         }
-                        console.log(`✅ Deleted ${botMessages.size} bot messages from ${channel.name || channelId}`);
+                        console.log(
+                            `✅ Deleted ${botMessages.size} bot messages from ${channel.name || channelId}`,
+                        );
                     }
                 } while (fetched.size === 100); // Continue if we got a full batch
-                
             } catch (error) {
                 console.log(
                     `❌ Could not cleanup channel ${channelId}:`,
@@ -3235,13 +3389,13 @@ async function cleanupOldPanels() {
             }
         }
     }
-    
+
     console.log("✅ Channel cleanup completed - All channels are now fresh!");
 }
 
 // With this (hardcoded, as requested):
 client.login(
-    "",
+    "MTM4NjM2MzcyNjM0MDQyMzgyMQ.GLpFX4.OyDGG2BqgF93XlF6mkk7iFKA9D4zlPy8_I30sg",
 );
 //
 // Recommended secure approach (using environment variable):
