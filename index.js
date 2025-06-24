@@ -206,7 +206,7 @@ client.once('ready', async () => {
                 option.setName('amount')
                     .setDescription('Amount of points to send')
                     .setRequired(true)
-                    .setMinValue(1)
+                    .setMinValu(1)
             ),
 
         new SlashCommandBuilder()
@@ -824,10 +824,92 @@ async function handleRedeemGiftCard(interaction) {
     const embed = new EmbedBuilder()
         .setTitle('🎁 Gift Card Redemption Center')
         .setDescription(`**Your Balance:** ${userData.points} 💎\n\n**Available Gift Cards:**\n\n\`\`\`\n🎁 GIFT CARD STORE 🎁\n╔══════════════════╗\n║ Choose your reward! ║\n╚══════════════════╝\n\`\`\`\nSelect a gift card from the dropdown below:`)
-        .setColor(0xFFD700);
+        .setColor(0xFFD700);    // Show available gift cards
+    const selectMenu = createGiftCardSelect();
+    await interaction.reply({ embeds: [embed], components: [selectMenu], ephemeral: true });
+}
 
-    // Show available gift cards
-    Object.entries(G\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n```')
+async function handleGiftCardSelection(interaction) {
+    const cardType = interaction.values[0];
+    const card = GIFT_CARDS[cardType];
+
+    if (!card) {
+        return await interaction.reply({ content: '❌ Invalid gift card selected!', ephemeral: true });
+    }
+
+    const userData = pointsSystem.getUserData(interaction.user.id);
+
+    if (userData.points < card.cost) {
+        const embed = new EmbedBuilder()
+            .setTitle('❌ Insufficient Diamonds')
+            .setDescription(`You need ${card.cost} 💎 but only have ${userData.points} 💎`)
+            .setColor(0xFF0000);
+
+        const reply = await interaction.reply({ embeds: [embed], ephemeral: true });
+
+        // Auto-delete the insufficient funds message after 5 minutes
+        setTimeout(async () => {
+            try {
+                await reply.delete();
+            } catch (error) {
+                console.log('Could not delete insufficient funds message:', error.message);
+            }
+        }, 5 * 60 * 1000); // 5 minutes
+
+        return;
+    }
+
+    userData.points -= card.cost;
+    userData.total_spent += card.cost;
+    userData.gift_cards_redeemed = userData.gift_cards_redeemed || [];
+    userData.gift_cards_redeemed.push(cardType);
+
+    const requestId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    pointsSystem.data.gift_card_requests[requestId] = {
+        user_id: interaction.user.id,
+        card_type: cardType,
+        status: 'pending',
+        timestamp: new Date().toISOString()
+    };
+
+    const embed = new EmbedBuilder()
+        .setTitle('🎁 Gift Card Purchase Successful!')
+        .setDescription(`**${card.name}** purchased for ${card.cost} 💎\n\n**Request ID:** \`${requestId}\`\n\nYour gift card request has been submitted! An admin will process it soon.`)
+        .addFields(
+            { name: '💰 New Balance', value: `${userData.points} 💎`, inline: true },
+            { name: '📊 Total Spent', value: `${userData.total_spent} 💎`, inline: true }
+        )
+        .setColor(0x00FF00);
+
+    const reply = await interaction.update({ embeds: [embed], components: [] });
+
+    // Auto-delete the gift card purchase result after 5 minutes
+    setTimeout(async () => {
+        try {
+            await reply.delete();
+        } catch (error) {
+            console.log('Could not delete gift card purchase result:', error.message);
+        }
+    }, 5 * 60 * 1000); // 5 minutes
+
+    await pointsSystem.saveData();
+}
+
+async function handleLeaderboard(interaction) {
+    if (CHANNELS.general === null && interaction.channelId !== CHANNELS.leaderboard) {
+        const embed = new EmbedBuilder()
+            .setTitle('❌ Wrong Channel')
+            .setDescription(`Please use this command in <#${CHANNELS.leaderboard}>`)
+            .setColor(0xFF0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    const sortedUsers = Object.entries(pointsSystem.data.users)
+        .sort(([,a], [,b]) => b.points - a.points);
+
+    const embed = new EmbedBuilder()
+        .setTitle('🏆 Diamond Points Leaderboard')
+        .setDescription('**Top Diamond Elites:**\n```\n🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n```')
         .setColor(0xFFD700);
 
     const medals = ['🥇', '🥈', '🥉'];
@@ -997,7 +1079,8 @@ async function sendLeaderboardPanel() {
 
         const embed = new EmbedBuilder()
             .setTitle('🏆 Diamond Points Leaderboard')
-            .setDescription('**Top Diamond Elites:**\n```\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n```')
+            .setDescription('**Top Diamond Elites:**\n```\n
+    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n```')
             .setColor(0xFFD700);
 
         const medals = ['🥇', '🥈', '🥉'];
