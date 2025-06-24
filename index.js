@@ -486,6 +486,13 @@ async function handleButtonInteraction(interaction) {
                 await showGiftCardCheckModal(interaction);
                 break;
             case 'generate_gift_card':
+                if (!hasAdminRole(interaction)) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('❌ Access Denied')
+                        .setDescription('You need the admin role to use this feature.')
+                        .setColor(0xFF0000);
+                    return await interaction.reply({ embeds: [embed], ephemeral: true });
+                }
                 await showGenerateGiftCardModal(interaction);
                 break;
             case 'user_commands':
@@ -1450,6 +1457,14 @@ async function handleCheckGiftCard(interaction) {
 }
 
 async function handleGenerateGiftCard(interaction) {
+    if (!hasAdminRole(interaction)) {
+        const embed = new EmbedBuilder()
+            .setTitle('❌ Access Denied')
+            .setDescription('You need the admin role to use this command.')
+            .setColor(0xFF0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
     if (interaction.channelId !== CHANNELS.gift_cards) {
         const embed = new EmbedBuilder()
             .setTitle('❌ Wrong Channel')
