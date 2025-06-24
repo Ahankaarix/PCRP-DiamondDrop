@@ -27,6 +27,15 @@ const CHANNELS = {
     general: null // Can be set to allow leaderboard from general channel
 };
 
+// Admin role configuration
+const ADMIN_ROLE_ID = '1210529712926105661';
+
+// Function to check if user has admin role
+function hasAdminRole(interaction) {
+    if (!interaction.member) return false;
+    return interaction.member.roles.cache.has(ADMIN_ROLE_ID);
+}
+
 // Gift card options
 const GIFT_CARDS = {
     pcrp: { name: 'PCRP Gift Card', cost: 500, emoji: '🎁' }
@@ -272,7 +281,7 @@ client.once('ready', async () => {
                 option.setName('amount')
                     .setDescription('Amount of points to send')
                     .setRequired(true)
-                    .setMinValu(1)
+                    .setMinValue(1)
             ),
 
         new SlashCommandBuilder()
@@ -1071,6 +1080,14 @@ async function handleLeaderboard(interaction) {
 }
 
 async function handleDropPoints(interaction) {
+    if (!hasAdminRole(interaction)) {
+        const embed = new EmbedBuilder()
+            .setTitle('❌ Access Denied')
+            .setDescription('You need the admin role to use this command.')
+            .setColor(0xFF0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
     // Point drop functionality - admin only
     const embed = new EmbedBuilder()
         .setTitle('🎯 Point Drop Coming Soon!')
@@ -1080,6 +1097,14 @@ async function handleDropPoints(interaction) {
 }
 
 async function handleSendDailyClaim(interaction) {
+    if (!hasAdminRole(interaction)) {
+        const embed = new EmbedBuilder()
+            .setTitle('❌ Access Denied')
+            .setDescription('You need the admin role to use this command.')
+            .setColor(0xFF0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
     await sendDailyClaimPanel();
     await interaction.reply({ content: '✅ Daily claim panel sent!', ephemeral: true });
 }
@@ -1137,6 +1162,14 @@ async function handleOpenGiftTicket(interaction) {
 }
 
 async function handleSendGiftCardPanel(interaction) {
+    if (!hasAdminRole(interaction)) {
+        const embed = new EmbedBuilder()
+            .setTitle('❌ Access Denied')
+            .setDescription('You need the admin role to use this command.')
+            .setColor(0xFF0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
     await sendGiftCardPanel();
     await interaction.reply({ content: '✅ Gift card panel sent!', ephemeral: true });
 }
@@ -1506,6 +1539,14 @@ async function handleInfo(interaction) {
 }
 
 async function handleSendInfoPanel(interaction) {
+    if (!hasAdminRole(interaction)) {
+        const embed = new EmbedBuilder()
+            .setTitle('❌ Access Denied')
+            .setDescription('You need the admin role to use this command.')
+            .setColor(0xFF0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
     await sendInfoPanel();
     await interaction.reply({ content: '✅ Information panel sent!', ephemeral: true });
 }
@@ -1547,6 +1588,14 @@ async function showUserCommands(interaction) {
 }
 
 async function showAdminCommands(interaction) {
+    if (!hasAdminRole(interaction)) {
+        const embed = new EmbedBuilder()
+            .setTitle('❌ Access Denied')
+            .setDescription('You need the admin role to view admin commands.')
+            .setColor(0xFF0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
     const embed = new EmbedBuilder()
         .setTitle('🛡️ Admin Commands - Diamond Bot')
         .setDescription('**Administrator-Only Commands:**')
