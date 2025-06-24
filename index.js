@@ -3871,15 +3871,6 @@ async function showUserCommands(interaction) {
     ); // 5 minutes
 }
 
-                    "Could not delete user commands information:",
-                    error.message,
-                );
-            }
-        },
-        5 * 60 * 1000,
-    ); // 5 minutes
-}
-
 async function showAdminCommands(interaction) {
     if (!hasAdminRole(interaction)) {
         const embed = new EmbedBuilder()
@@ -5775,7 +5766,7 @@ async function performEnhancedChannelCleanup() {
 
 // With this (hardcoded, as requested):
 client.login(
-    "MTM4NjM2MzcyNjM0MDQyMzgyMQ.Gp3OsC.BECnvKXhPYRztgeRdntR_gjiJK7-lyjjDhpkfI",
+    "MTM4NjM2MzcyNjM0MDQyMzgyMQ.G6lMP7.yLjBqvpgH8zyLuT9XJTzZ5PHq8_asZM1mNGyO4",
 );
 //
 // Recommended secure approach (using environment variable):
