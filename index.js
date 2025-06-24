@@ -23,6 +23,7 @@ const CHANNELS = {
     gambling: '1387023670634872873',
     gift_cards: '1387023764012797972', // Gift Card Redemption Center
     gift_card_verification: '1387119676961849464', // Gift Card Verification Panel
+    information: '1387120060870688788', // Information Panel
     general: null // Can be set to allow leaderboard from general channel
 };
 
@@ -223,6 +224,22 @@ function createGiftCardPanelButtons() {
     return [row1, row2];
 }
 
+function createInfoPanelButtons() {
+    return new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('user_commands')
+                .setLabel('👥 User Commands')
+                .setStyle(ButtonStyle.Primary)
+                .setEmoji('ℹ️'),
+            new ButtonBuilder()
+                .setCustomId('admin_commands')
+                .setLabel('🛡️ Admin Commands')
+                .setStyle(ButtonStyle.Danger)
+                .setEmoji('⚙️')
+        );
+}
+
 // Event handlers
 client.once('ready', async () => {
     console.log(`${client.user.tag} has connected to Discord!`);
@@ -315,7 +332,16 @@ client.once('ready', async () => {
                     .setRequired(true)
                     .setMinValue(500)
                     .setMaxValue(100000)
-            )
+            ),
+
+        new SlashCommandBuilder()
+            .setName('info')
+            .setDescription('View bot information and help'),
+
+        new SlashCommandBuilder()
+            .setName('send_info_panel')
+            .setDescription('Admin: Send the information panel')
+            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     ];
 
     try {
@@ -389,6 +415,12 @@ async function handleSlashCommand(interaction) {
             case 'generate_gift_card':
                 await handleGenerateGiftCard(interaction);
                 break;
+            case 'info':
+                await handleInfo(interaction);
+                break;
+            case 'send_info_panel':
+                await handleSendInfoPanel(interaction);
+                break;
         }
     } catch (error) {
         console.error('Error handling slash command:', error);
@@ -446,6 +478,12 @@ async function handleButtonInteraction(interaction) {
                 break;
             case 'generate_gift_card':
                 await showGenerateGiftCardModal(interaction);
+                break;
+            case 'user_commands':
+                await showUserCommands(interaction);
+                break;
+            case 'admin_commands':
+                await showAdminCommands(interaction);
                 break;
         }
     } catch (error) {
@@ -1449,6 +1487,101 @@ async function handleGenerateGiftCard(interaction) {
     await pointsSystem.saveData();
 }
 
+async function handleInfo(interaction) {
+    if (interaction.channelId !== CHANNELS.information) {
+        const embed = new EmbedBuilder()
+            .setTitle('❌ Wrong Channel')
+            .setDescription(`Please use this command in <#${CHANNELS.information}>`)
+            .setColor(0xFF0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    const embed = new EmbedBuilder()
+        .setTitle('ℹ️ Diamond Points Bot Information')
+        .setDescription(`**Welcome to the Diamond Economy System!**\n\`\`\`\n    ℹ️ INFORMATION ℹ️\n  ╔═══════════════════╗\n  ║ 💎 DIAMOND SYSTEM ║\n  ║ 🎮 GAMES & REWARDS ║\n  ╚═══════════════════╝\n\`\`\`\n\n**Bot Features:**\n💎 **Daily Claims** - Earn diamonds with streak bonuses\n🎲 **Casino Games** - Dice, Coinflip, and Slots\n🎁 **Gift Cards** - Convert diamonds to rewards\n🏆 **Leaderboards** - Compete with other users\n📊 **Statistics** - Track your progress\n\nClick the buttons below for detailed command lists!`)
+        .setColor(0x00BFFF);
+
+    const components = createInfoPanelButtons();
+    await interaction.reply({ embeds: [embed], components: [components] });
+}
+
+async function handleSendInfoPanel(interaction) {
+    await sendInfoPanel();
+    await interaction.reply({ content: '✅ Information panel sent!', ephemeral: true });
+}
+
+async function showUserCommands(interaction) {
+    const embed = new EmbedBuilder()
+        .setTitle('👥 User Commands - Diamond Bot')
+        .setDescription('**Available Commands for All Users:**')
+        .addFields(
+            { 
+                name: '💎 Daily & Points Commands', 
+                value: '`/claim_daily` - Claim daily diamonds (streak bonus)\n`/get_points [user]` - Check points balance\n`/transfer_points <user> <amount>` - Send diamonds to others', 
+                inline: false 
+            },
+            { 
+                name: '🎲 Gaming Commands', 
+                value: '`/gambling_menu` - Access casino games\n• Dice Game (5x multiplier)\n• Coinflip (2x multiplier)\n• Lucky Slots (up to 12x)', 
+                inline: false 
+            },
+            { 
+                name: '🎁 Gift Card Commands', 
+                value: '`/redeem_gift_card` - Legacy gift card system\n`/convert_points` - Same as redeem gift card\n`/generate_gift_card <amount>` - Create gift cards\n`/check_gift_card <code>` - Verify gift card status', 
+                inline: false 
+            },
+            { 
+                name: '🏆 Information Commands', 
+                value: '`/leaderboard` - View top 10 users\n`/test_dm` - Test if bot can DM you\n`/info` - Show this information panel', 
+                inline: false 
+            },
+            { 
+                name: '📍 Channel Locations', 
+                value: `💎 Daily Claims: <#${CHANNELS.daily_claims}>\n🎲 Gambling: <#${CHANNELS.gambling}>\n🎁 Gift Cards: <#${CHANNELS.gift_cards}>\n🔍 Verification: <#${CHANNELS.gift_card_verification}>\n📊 Transfers: <#${CHANNELS.transfers}>\n🏆 Leaderboard: <#${CHANNELS.leaderboard}>`, 
+                inline: false 
+            }
+        )
+        .setColor(0x00FF00);
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function showAdminCommands(interaction) {
+    const embed = new EmbedBuilder()
+        .setTitle('🛡️ Admin Commands - Diamond Bot')
+        .setDescription('**Administrator-Only Commands:**')
+        .addFields(
+            { 
+                name: '🎛️ Panel Management', 
+                value: '`/send_daily_claim` - Send daily claim panel\n`/send_gift_card_panel` - Send gift card panel\n`/send_info_panel` - Send information panel', 
+                inline: false 
+            },
+            { 
+                name: '💎 Point Management', 
+                value: '`/drop_points` - Start point drop event (coming soon)\n• Point drops give community rewards\n• Admin can trigger special events', 
+                inline: false 
+            },
+            { 
+                name: '📊 System Features', 
+                value: '• Auto-save every 5 minutes\n• Auto-cleanup expired gift cards\n• Auto-delete gambling results (3 min)\n• Auto-delete gift card results (5 min)', 
+                inline: false 
+            },
+            { 
+                name: '🎁 Gift Card System', 
+                value: '• Users can generate gift cards (500-100k diamonds)\n• 7-day validity period\n• Status tracking (Valid/Claimed/Void)\n• DM delivery system', 
+                inline: false 
+            },
+            { 
+                name: '⚙️ Configuration', 
+                value: `• Daily Reward: 50 💎 (base)\n• Max Streak: 3x multiplier\n• Conversion Rate: 100 💎 = 1 Rupee\n• Data stored in: \`bot_data.json\``, 
+                inline: false 
+            }
+        )
+        .setColor(0xFF0000);
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
 // Startup functions
 async function sendStartupPanels() {
     await cleanupOldPanels();
@@ -1456,6 +1589,7 @@ async function sendStartupPanels() {
     await sendGamblingPanel();
     await sendGiftCardPanel();
     await sendLeaderboardPanel();
+    await sendInfoPanel();
 }
 
 async function sendDailyClaimPanel() {
@@ -1541,9 +1675,23 @@ async function sendLeaderboardPanel() {
     }
 }
 
+async function sendInfoPanel() {
+    const infoChannel = client.channels.cache.get(CHANNELS.information);
+    if (infoChannel) {
+        const embed = new EmbedBuilder()
+            .setTitle('ℹ️ Diamond Points Bot Information Center')
+            .setDescription(`**Welcome to the Complete Bot Guide!**\n\`\`\`\n    ℹ️ HELP CENTER ℹ️\n  ╔═══════════════════╗\n  ║ 📖 USER COMMANDS  ║\n  ║ 🛡️ ADMIN COMMANDS ║\n  ║ 💎 BOT FEATURES   ║\n  ╚═══════════════════╝\n\`\`\`\n\n**Quick Start Guide:**\n💎 **New Users:** Start with \`/claim_daily\` in <#${CHANNELS.daily_claims}>\n🎲 **Gaming:** Visit <#${CHANNELS.gambling}> for casino games\n🎁 **Rewards:** Use <#${CHANNELS.gift_cards}> to redeem prizes\n🏆 **Rankings:** Check <#${CHANNELS.leaderboard}> for top players\n\n**Bot Economy:**\n• Base Daily Reward: 50 💎\n• Streak Multiplier: Up to 3x\n• Gift Card Range: 500-100,000 💎\n• Conversion Rate: 100 💎 = 1 Rupee\n\n**Commands Available:**\n• \`/info\` - Show this panel\n• Use buttons below for detailed command lists\n\nClick a button below to view command details!`)
+            .setColor(0x00BFFF);
+
+        const components = createInfoPanelButtons();
+        await infoChannel.send({ embeds: [embed], components: [components] });
+        console.log('✅ Information panel sent');
+    }
+}
+
 async function cleanupOldPanels() {
     // Function to cleanup old bot messages to prevent duplicates
-    const channels = [CHANNELS.daily_claims, CHANNELS.gambling, CHANNELS.gift_cards, CHANNELS.leaderboard];
+    const channels = [CHANNELS.daily_claims, CHANNELS.gambling, CHANNELS.gift_cards, CHANNELS.leaderboard, CHANNELS.information];
 
     for (const channelId of channels) {
         const channel = client.channels.cache.get(channelId);
