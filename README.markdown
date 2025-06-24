@@ -1,4 +1,92 @@
-# Discord Points Bot README
+# # Discord Points Bot README
+
+A comprehensive Discord bot that implements a points system designed to increase interaction, reward engagement, and gamify the experience in your Discord community. Members can earn, use, and convert points for PCRP rewards like gift cards!
+
+## ✨ Features
+
+### 💎 Points System
+- **Daily Claims**: Users can claim daily rewards with streak bonuses (up to 3x multiplier)
+- **Streak System**: Consecutive daily claims increase rewards within 36-hour windows
+- **Point Transfers**: Users can send points to each other securely
+- **Persistent Data**: All data automatically saved and restored on bot restart
+- **Gift Card Redemption**: Convert diamonds to real gift cards (Steam, Amazon, Netflix, etc.)
+
+### 🎲 Interactive Minigames
+- **Coinflip Game**: Interactive modal-based betting with 2x multiplier
+- **Dice Game**: Guess numbers 1-6 for 5x multiplier rewards
+- **Lucky Slots**: Auto-spin slot machine with up to 12x jackpot
+- **Point Drops**: Admin-triggered community events with countdown timers
+- **Interactive UI**: All games use Discord buttons and modals for seamless experience
+
+### 🎁 Reward System
+- **Gift Card Store**: Steam, Amazon, Spotify, Netflix, Google Play cards
+- **Automatic Processing**: DM notifications and admin request tracking
+- **Inventory Tracking**: Complete history of redeemed rewards
+- **Real Value Conversion**: 100 Diamonds = 1 Rupee system
+
+### 📊 Advanced Features
+- **3D ASCII Art**: Beautiful visual displays throughout the bot
+- **Interactive Panels**: Auto-refreshing daily claim and gambling panels
+- **Leaderboards**: Top 10 richest players with medals and rankings
+- **Statistics Tracking**: Total earned, spent, streaks, and gift card history
+- **Auto-Cleanup**: Automatic removal of old bot messages
+## 🎮 Game Mechanics
+
+### 🎲 Dice Game
+- **How to Play**: Choose number 1-6, set your bet (min 10 💎)
+- **Payout**: 5x your bet if you guess correctly
+- **Interface**: Modal form with number and bet input
+
+### 🪙 Coinflip Game
+- **How to Play**: Choose heads/tails (H/T shortcuts work), set bet
+- **Payout**: 2x your bet for correct guess
+- **Interface**: Modal form with choice and bet input
+
+### 🎰 Lucky Slots
+- **How to Play**: Auto-spin with 30 💎 fixed bet
+- **Symbols**: 🍒🍋🍊💎⭐🍀 with different rarities
+- **Payouts**: 
+  - 3x same symbol: 3x multiplier
+  - 3x 💎: 10x multiplier
+  - 3x ⭐: 8x multiplier  
+  - 3x 🍀: 12x multiplier (jackpot!)
+
+## 🎁 Gift Card System
+
+## 🔧 Advanced Configuration
+
+### Auto-Features
+- **24H Daily Reset**: Automatic daily claim panel refresh
+- **Auto-Save**: Data saved every 5 minutes
+- **Message Cleanup**: Old bot messages automatically removed
+- **Startup Recovery**: All panels restored on bot restart
+## 🎯 Point Economy Design
+
+### Earning Opportunities
+- **Daily Claims**: 50-150 💎 (streak multiplied)
+- **Point Drops**: Admin events (10 💎 per claim)
+- **Transfers**: Receive from other users
+- **Future**: Giveaways, events, special activities
+
+### Spending Options
+- **Gambling**: Risk points for potential multipliers
+- **Gift Cards**: Convert to real-world rewards
+- **Transfers**: Send to friends and community members
+- **Future**: Special roles, exclusive access
+
+### Conversion Rate
+- **100 Diamonds = 1 Rupee**
+- **Purpose**: VIRTUAL redemption system
+- **Example**: 1000 💎 PCRP card = 10 Rupees value
+
+## 🛠️ Technical Features
+
+### Modern Discord Integration
+- **Slash Commands**: All commands use modern Discord API
+- **Interactive Components**: Buttons, modals, dropdowns
+- **Embeds**: Rich, colorful message formatting
+- **Ephemeral Responses**: Private error messages
+- **Auto-Sync**: Commands automatically register
 
 ## Overview
 This is a Discord bot designed to manage a points-based economy system using "Diamonds" (💎) as currency. Users can earn, spend, transfer, and gamble points, redeem gift cards, and view leaderboards. The bot is built using Node.js and the `discord.js` library, with data persistence via a JSON file.
