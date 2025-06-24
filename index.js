@@ -633,6 +633,12 @@ async function handleButtonInteraction(interaction) {
                 await showPointDropHistory(interaction);
                 break;
         }
+
+        // Handle diamond mining buttons
+        if (customId.startsWith("mine_diamonds_")) {
+            const eventId = customId.replace("mine_diamonds_", "");
+            await handleDiamondMining(interaction, eventId);
+        }
     } catch (error) {
         console.error("Error handling button interaction:", error);
     }
@@ -1425,14 +1431,31 @@ async function handleDropPoints(interaction) {
         return await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
-    // Point drop functionality - admin only
+    const dropChannel = client.channels.cache.get(CHANNELS.point_drops);
+    if (!dropChannel) {
+        return await interaction.reply({
+            content: "❌ Point drops channel not found!",
+            ephemeral: true
+        });
+    }
+
     const embed = new EmbedBuilder()
-        .setTitle("🎯 Point Drop Coming Soon!")
-        .setDescription(
-            "Point drop system will be implemented in a future update.",
-        )
-        .setColor(0x0099ff);
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+        .setTitle("💎 Diamond Mining Event Starting!")
+        .setDescription(`**💎 DIAMOND MINING 💎**\n\`\`\`\n     💎💎💎\n    ╱ ╲ ╱ ╲\n   ╱   ╲   ╲\n  ╱_____╲___╲\n\`\`\`\n\n⏰ **Mining starts in 5 seconds!**\n💰 **Reward:** 10 💎 per claim\n⏱️ **Duration:** 60 seconds\n🎯 **Get ready to mine diamonds!**`)
+        .setColor(0xffd700)
+        .setTimestamp();
+
+    const message = await dropChannel.send({ embeds: [embed] });
+    
+    // Start countdown after 5 seconds
+    setTimeout(async () => {
+        await startDiamondMining(message, dropChannel);
+    }, 5000);
+
+    await interaction.reply({
+        content: `✅ Diamond mining event started in <#${CHANNELS.point_drops}>!`,
+        ephemeral: true
+    });
 }
 
 async function handleSendDailyClaim(interaction) {
@@ -2536,12 +2559,33 @@ async function handleTicketApproval(interaction, ticketId, approved) {
 
     await interaction.update({ embeds: [embed], components: [] });
 
+    // If approved, start diamond mining event
+    if (approved) {
+        const dropChannel = client.channels.cache.get(CHANNELS.point_drops);
+        if (dropChannel) {
+            setTimeout(async () => {
+                const miningEmbed = new EmbedBuilder()
+                    .setTitle("💎 Diamond Mining Event - Ticket Approved!")
+                    .setDescription(`**🎫 Ticket:** \`${ticketId}\`\n**Event:** ${ticket.title}\n\n**💎 DIAMOND MINING 💎**\n\`\`\`\n     ⛏️💎⛏️\n    ╱ ╲ ╱ ╲\n   ╱   ╲   ╲\n  ╱_____╲___╲\n\`\`\`\n\n⏰ **Mining starts in 10 seconds!**\n💰 **Reward:** ${Math.floor(ticket.diamondAmount / 20)} 💎 per claim\n⏱️ **Duration:** ${ticket.duration} minutes\n🎯 **Event approved and starting soon!**`)
+                    .setColor(0xffd700)
+                    .setTimestamp();
+
+                const message = await dropChannel.send({ embeds: [miningEmbed] });
+                
+                // Start mining after 10 seconds
+                setTimeout(async () => {
+                    await startCustomDiamondMining(message, dropChannel, ticket);
+                }, 10000);
+            }, 5000);
+        }
+    }
+
     // Notify the user
     try {
         const user = await client.users.fetch(ticket.userId);
         const userEmbed = new EmbedBuilder()
             .setTitle(`🎯 Point Drop Ticket ${approved ? 'Approved' : 'Rejected'}`)
-            .setDescription(`**Ticket ID:** \`${ticketId}\`\n**Event Title:** ${ticket.title}\n\n**Status:** ${approved ? '✅ Approved - Your event will be scheduled soon!' : '❌ Rejected - Please try again with a different request.'}`)
+            .setDescription(`**Ticket ID:** \`${ticketId}\`\n**Event Title:** ${ticket.title}\n\n**Status:** ${approved ? '✅ Approved - Your diamond mining event is starting!' : '❌ Rejected - Please try again with a different request.'}`)
             .setColor(approved ? 0x00ff00 : 0xff0000)
             .setTimestamp();
 
@@ -2549,6 +2593,146 @@ async function handleTicketApproval(interaction, ticketId, approved) {
     } catch (error) {
         console.log("Could not send DM to user:", error.message);
     }
+}
+
+// Diamond Mining System
+let activeMiningEvents = new Map();
+
+async function startDiamondMining(message, channel) {
+    const eventId = `mining_${Date.now()}`;
+    const miningData = {
+        participants: new Set(),
+        timeLeft: 60,
+        totalClaims: 0,
+        diamondReward: 10
+    };
+    
+    activeMiningEvents.set(eventId, miningData);
+
+    const miningButton = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`mine_diamonds_${eventId}`)
+            .setLabel("⛏️ Mine Diamonds!")
+            .setStyle(ButtonStyle.Success)
+            .setEmoji("💎")
+    );
+
+    const startEmbed = new EmbedBuilder()
+        .setTitle("💎 DIAMOND MINING ACTIVE! ⛏️")
+        .setDescription(`**💎 DIAMOND MINE 💎**\n\`\`\`\n    ⛏️💎💎💎⛏️\n   ╱ ╲ ╱ ╲ ╱ ╲\n  ╱   ╲   ╲   ╲\n ╱_____╲___╲___╲\n    MINING ZONE\n\`\`\`\n\n⏱️ **Time Remaining:** 60 seconds\n💰 **Reward:** 10 💎 per claim\n👥 **Miners:** 0\n🏆 **Total Claims:** 0\n\n**Click the button below to mine diamonds!**`)
+        .setColor(0x00ff00)
+        .setTimestamp();
+
+    await message.edit({ embeds: [startEmbed], components: [miningButton] });
+
+    // Start countdown
+    const countdownInterval = setInterval(async () => {
+        miningData.timeLeft--;
+        
+        if (miningData.timeLeft <= 0) {
+            clearInterval(countdownInterval);
+            await endDiamondMining(message, eventId);
+            return;
+        }
+
+        const countdownEmbed = new EmbedBuilder()
+            .setTitle("💎 DIAMOND MINING ACTIVE! ⛏️")
+            .setDescription(`**💎 DIAMOND MINE 💎**\n\`\`\`\n    ⛏️💎💎💎⛏️\n   ╱ ╲ ╱ ╲ ╱ ╲\n  ╱   ╲   ╲   ╲\n ╱_____╲___╲___╲\n    MINING ZONE\n\`\`\`\n\n⏱️ **Time Remaining:** ${miningData.timeLeft} seconds\n💰 **Reward:** ${miningData.diamondReward} 💎 per claim\n👥 **Miners:** ${miningData.participants.size}\n🏆 **Total Claims:** ${miningData.totalClaims}\n\n**Click the button below to mine diamonds!**`)
+            .setColor(miningData.timeLeft <= 10 ? 0xff0000 : 0x00ff00)
+            .setTimestamp();
+
+        try {
+            await message.edit({ embeds: [countdownEmbed], components: [miningButton] });
+        } catch (error) {
+            console.log("Could not update mining countdown:", error.message);
+        }
+    }, 1000);
+}
+
+async function startCustomDiamondMining(message, channel, ticket) {
+    const eventId = `custom_mining_${ticket.id}`;
+    const diamondPerClaim = Math.floor(ticket.diamondAmount / 20); // Distribute total diamonds among claimers
+    const miningData = {
+        participants: new Set(),
+        timeLeft: ticket.duration * 60, // Convert minutes to seconds
+        totalClaims: 0,
+        diamondReward: diamondPerClaim,
+        maxClaims: Math.floor(ticket.diamondAmount / diamondPerClaim),
+        ticketId: ticket.id
+    };
+    
+    activeMiningEvents.set(eventId, miningData);
+
+    const miningButton = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`mine_diamonds_${eventId}`)
+            .setLabel("⛏️ Mine Diamonds!")
+            .setStyle(ButtonStyle.Success)
+            .setEmoji("💎")
+    );
+
+    const startEmbed = new EmbedBuilder()
+        .setTitle(`💎 ${ticket.title} - DIAMOND MINING! ⛏️`)
+        .setDescription(`**💎 CUSTOM DIAMOND MINE 💎**\n\`\`\`\n    ⛏️💎💎💎⛏️\n   ╱ ╲ ╱ ╲ ╱ ╲\n  ╱   ╲   ╲   ╲\n ╱_____╲___╲___╲\n   ${ticket.title.substring(0, 13).toUpperCase()}\n\`\`\`\n\n⏱️ **Time Remaining:** ${ticket.duration} minutes\n💰 **Reward:** ${diamondPerClaim} 💎 per claim\n🎫 **Event:** ${ticket.title}\n👥 **Miners:** 0\n🏆 **Total Claims:** 0 / ${miningData.maxClaims}\n\n**Click the button below to mine diamonds!**`)
+        .setColor(0x00ff00)
+        .setTimestamp();
+
+    await message.edit({ embeds: [startEmbed], components: [miningButton] });
+
+    // Start countdown
+    const countdownInterval = setInterval(async () => {
+        miningData.timeLeft--;
+        
+        if (miningData.timeLeft <= 0 || miningData.totalClaims >= miningData.maxClaims) {
+            clearInterval(countdownInterval);
+            await endCustomDiamondMining(message, eventId, ticket);
+            return;
+        }
+
+        const minutes = Math.floor(miningData.timeLeft / 60);
+        const seconds = miningData.timeLeft % 60;
+        const timeDisplay = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+
+        const countdownEmbed = new EmbedBuilder()
+            .setTitle(`💎 ${ticket.title} - DIAMOND MINING! ⛏️`)
+            .setDescription(`**💎 CUSTOM DIAMOND MINE 💎**\n\`\`\`\n    ⛏️💎💎💎⛏️\n   ╱ ╲ ╱ ╲ ╱ ╲\n  ╱   ╲   ╲   ╲\n ╱_____╲___╲___╲\n   ${ticket.title.substring(0, 13).toUpperCase()}\n\`\`\`\n\n⏱️ **Time Remaining:** ${timeDisplay}\n💰 **Reward:** ${miningData.diamondReward} 💎 per claim\n🎫 **Event:** ${ticket.title}\n👥 **Miners:** ${miningData.participants.size}\n🏆 **Total Claims:** ${miningData.totalClaims} / ${miningData.maxClaims}\n\n**Click the button below to mine diamonds!**`)
+            .setColor(miningData.timeLeft <= 30 ? 0xff0000 : 0x00ff00)
+            .setTimestamp();
+
+        try {
+            await message.edit({ embeds: [countdownEmbed], components: [miningButton] });
+        } catch (error) {
+            console.log("Could not update custom mining countdown:", error.message);
+        }
+    }, 1000);
+}
+
+async function endDiamondMining(message, eventId) {
+    const miningData = activeMiningEvents.get(eventId);
+    if (!miningData) return;
+
+    const finalEmbed = new EmbedBuilder()
+        .setTitle("💎 DIAMOND MINING COMPLETED! ⛏️")
+        .setDescription(`**💎 MINING RESULTS 💎**\n\`\`\`\n    ⛏️💎💎💎⛏️\n   ╱ ╲ ╱ ╲ ╱ ╲\n  ╱   ╲   ╲   ╲\n ╱_____╲___╲___╲\n    MINE CLOSED\n\`\`\`\n\n⏰ **Event Status:** Completed\n👥 **Total Miners:** ${miningData.participants.size}\n🏆 **Total Claims:** ${miningData.totalClaims}\n💎 **Diamonds Distributed:** ${miningData.totalClaims * miningData.diamondReward} 💎\n\n**Thanks for participating in the diamond mining event!**`)
+        .setColor(0x808080)
+        .setTimestamp();
+
+    await message.edit({ embeds: [finalEmbed], components: [] });
+    activeMiningEvents.delete(eventId);
+}
+
+async function endCustomDiamondMining(message, eventId, ticket) {
+    const miningData = activeMiningEvents.get(eventId);
+    if (!miningData) return;
+
+    const finalEmbed = new EmbedBuilder()
+        .setTitle(`💎 ${ticket.title} - MINING COMPLETED! ⛏️`)
+        .setDescription(`**💎 MINING RESULTS 💎**\n\`\`\`\n    ⛏️💎💎💎⛏️\n   ╱ ╲ ╱ ╲ ╱ ╲\n  ╱   ╲   ╲   ╲\n ╱_____╲___╲___╲\n    MINE CLOSED\n\`\`\`\n\n⏰ **Event Status:** Completed\n🎫 **Event:** ${ticket.title}\n👥 **Total Miners:** ${miningData.participants.size}\n🏆 **Total Claims:** ${miningData.totalClaims}\n💎 **Diamonds Distributed:** ${miningData.totalClaims * miningData.diamondReward} 💎\n🎯 **Ticket ID:** \`${ticket.id}\`\n\n**Thanks for participating in this custom diamond mining event!**`)
+        .setColor(0x808080)
+        .setTimestamp();
+
+    await message.edit({ embeds: [finalEmbed], components: [] });
+    activeMiningEvents.delete(eventId);
 }
 
 async function showPointDropGuidelines(interaction) {
@@ -2699,6 +2883,52 @@ async function showPointDropHistory(interaction) {
     }
 
     await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function handleDiamondMining(interaction, eventId) {
+    const miningData = activeMiningEvents.get(eventId);
+    if (!miningData) {
+        return await interaction.reply({
+            content: "❌ This mining event has ended!",
+            ephemeral: true
+        });
+    }
+
+    const userId = interaction.user.id;
+    
+    // Check if user already participated
+    if (miningData.participants.has(userId)) {
+        return await interaction.reply({
+            content: "⛏️ You've already mined diamonds in this event! Only one claim per user.",
+            ephemeral: true
+        });
+    }
+
+    // Check if max claims reached (for custom events)
+    if (miningData.maxClaims && miningData.totalClaims >= miningData.maxClaims) {
+        return await interaction.reply({
+            content: "💎 All diamonds have been mined! This event has reached its limit.",
+            ephemeral: true
+        });
+    }
+
+    // Add diamonds to user
+    const userData = pointsSystem.getUserData(userId);
+    userData.points += miningData.diamondReward;
+    userData.total_earned += miningData.diamondReward;
+
+    // Track participation
+    miningData.participants.add(userId);
+    miningData.totalClaims++;
+
+    const embed = new EmbedBuilder()
+        .setTitle("⛏️ Diamond Mined Successfully!")
+        .setDescription(`**💎 Mining Reward 💎**\n\`\`\`\n    ⛏️💎⛏️\n   ╱ ╲ ╱ ╲\n  ╱   ╲   ╲\n ╱_____╲___╲\n  SUCCESS!\n\`\`\`\n\n**Diamonds Earned:** ${miningData.diamondReward} 💎\n**New Balance:** ${userData.points.toLocaleString()} 💎\n**Event:** ${miningData.ticketId ? `Ticket ${miningData.ticketId}` : 'Admin Drop'}\n\n🎉 **Congratulations on your successful mining!**`)
+        .setColor(0x00ff00)
+        .setTimestamp();
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+    await pointsSystem.saveData();
 }
 
 async function sendPointDropTicketPanel() {
