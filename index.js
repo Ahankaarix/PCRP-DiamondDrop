@@ -1390,8 +1390,13 @@ client.once("ready", async () => {
         console.error("Failed to register commands:", error);
     }
 
-    // Send startup panels
+    // Send startup panels and setup automatic UNO system
     setTimeout(sendStartupPanels, 10000);
+    
+    // Automatic UNO system ping and cleanup
+    setTimeout(async () => {
+        await setupAutoUnoSystem();
+    }, 15000); // Wait for panels to be sent first
 });
 
 // Interaction handlers
@@ -4015,7 +4020,7 @@ async function handleUnoTicketSubmit(interaction) {
         new ButtonBuilder()
             .setCustomId(`uno_ticket_cancel_${ticketId}`)
             .setLabel("❌ Cancel")
-            .setStyle(ButtonStyle.Danger"),
+            .setStyle(ButtonStyle.Danger),
     );
 
     await interaction.update({ embeds: [embed], components: [row] });
@@ -5351,6 +5356,120 @@ async function handleUnoActiveGames(interaction) {
     }
 
     await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+// Auto UNO System Setup
+async function setupAutoUnoSystem() {
+    console.log("🃏 Setting up automatic UNO system...");
+    
+    // Send UNO ticket panel to the designated channel
+    const unoChannel = client.channels.cache.get("1387168027027574875");
+    if (unoChannel) {
+        try {
+            // Clean any existing UNO panels first
+            const messages = await unoChannel.messages.fetch({ limit: 50 });
+            const botMessages = messages.filter(msg => 
+                msg.author.id === client.user.id && 
+                (msg.embeds.length > 0 && msg.embeds[0].title?.includes("UNO"))
+            );
+            
+            for (const msg of botMessages.values()) {
+                try {
+                    await msg.delete();
+                } catch (error) {
+                    console.log("Could not delete old UNO message:", error.message);
+                }
+            }
+            
+            // Send fresh UNO ticket panel
+            const panelData = createUnoTicketPanel();
+            await unoChannel.send(panelData);
+            console.log("✅ UNO system automatically activated and panel deployed!");
+            
+        } catch (error) {
+            console.error("❌ Error setting up automatic UNO system:", error);
+        }
+    } else {
+        console.log("❌ UNO channel not found for automatic setup");
+    }
+    
+    // Start automatic cleanup of user interactions every minute
+    setInterval(async () => {
+        await autoCleanupUserInteractions();
+    }, 60 * 1000); // Every 1 minute
+    
+    console.log("✅ Auto-cleanup system activated - user interactions will be cleaned every minute");
+}
+
+// Auto cleanup user interactions after 1 minute
+async function autoCleanupUserInteractions() {
+    const channels = [
+        CHANNELS.daily_claims,
+        CHANNELS.gambling,
+        CHANNELS.gift_cards,
+        CHANNELS.gift_card_verification,
+        CHANNELS.transfers,
+        CHANNELS.leaderboard,
+        CHANNELS.point_drops,
+        "1387168027027574875" // UNO channel
+    ];
+    
+    for (const channelId of channels) {
+        const channel = client.channels.cache.get(channelId);
+        if (channel) {
+            try {
+                const oneMinuteAgo = Date.now() - 60 * 1000;
+                const messages = await channel.messages.fetch({ limit: 50 });
+                
+                const messagesToDelete = messages.filter(msg => {
+                    const messageAge = Date.now() - msg.createdTimestamp;
+                    
+                    // Delete user interaction messages older than 1 minute
+                    if (msg.author.bot === false && messageAge > 60 * 1000) {
+                        const content = msg.content.toLowerCase();
+                        const hasEmbeds = msg.embeds.length > 0;
+                        const hasComponents = msg.components.length > 0;
+                        
+                        // Check for interaction patterns
+                        const interactionPatterns = [
+                            "/claim", "/gambling", "/transfer", "/generate",
+                            "/check", "/redeem", "/convert", "/uno",
+                            "💎", "diamonds", "claimed", "won", "lost",
+                            "🎲", "🪙", "🎰", "🎁", "🃏"
+                        ];
+                        
+                        const hasInteractionPattern = interactionPatterns.some(pattern =>
+                            content.includes(pattern)
+                        );
+                        
+                        // Delete if it looks like a bot interaction response
+                        if (hasInteractionPattern || hasEmbeds || hasComponents) {
+                            return true;
+                        }
+                    }
+                    
+                    return false;
+                });
+                
+                // Delete old interaction messages
+                for (const msg of messagesToDelete.values()) {
+                    try {
+                        await msg.delete();
+                        await new Promise(resolve => setTimeout(resolve, 100)); // Small delay
+                    } catch (error) {
+                        // Ignore delete errors
+                    }
+                }
+                
+                if (messagesToDelete.size > 0) {
+                    console.log(`🧹 Auto-cleaned ${messagesToDelete.size} user interaction messages from ${channel.name || channelId}`);
+                }
+                
+            } catch (error) {
+                // Ignore fetch/delete errors
+            }
+        }
+    }
 }
 
 async function sendSystemCommandsPanel() {
