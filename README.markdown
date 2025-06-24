@@ -1,283 +1,381 @@
-# # Discord Points Bot README
 
-A comprehensive Discord bot that implements a points system designed to increase interaction, reward engagement, and gamify the experience in your Discord community. Members can earn, use, and convert points for PCRP rewards like gift cards!
+# Discord Diamond Points Bot
 
-## ✨ Features
+A comprehensive Discord bot that implements a diamond-based economy system designed to increase server interaction, reward user engagement, and gamify the Discord experience. Users can earn diamonds through daily claims, participate in casino games, transfer points, and redeem gift cards for real rewards.
 
-### 💎 Points System
-- **Daily Claims**: Users can claim daily rewards with streak bonuses (up to 3x multiplier)
-- **Streak System**: Consecutive daily claims increase rewards within 36-hour windows
-- **Point Transfers**: Users can send points to each other securely
-- **Persistent Data**: All data automatically saved and restored on bot restart
-- **Gift Card Redemption**: Convert diamonds to real gift cards (Steam, Amazon, Netflix, etc.)
+## ✨ Key Features
 
-### 🎲 Interactive Minigames
-- **Coinflip Game**: Interactive modal-based betting with 2x multiplier
-- **Dice Game**: Guess numbers 1-6 for 5x multiplier rewards
-- **Lucky Slots**: Auto-spin slot machine with up to 12x jackpot
-- **Point Drops**: Admin-triggered community events with countdown timers
-- **Interactive UI**: All games use Discord buttons and modals for seamless experience
+### 💎 Diamond Economy System
+- **Daily Claims**: Users earn 50-150 💎 daily with streak bonuses (up to 3x multiplier)
+- **Streak System**: Consecutive claims within 36-hour windows increase rewards
+- **Point Transfers**: Secure diamond transfers between users
+- **Persistent Storage**: All data automatically saved to `bot_data.json`
+- **Auto-Save**: Data persistence every 5 minutes with startup recovery
 
-### 🎁 Reward System
-- **Gift Card Store**: Steam, Amazon, Spotify, Netflix, Google Play cards
-- **Automatic Processing**: DM notifications and admin request tracking
-- **Inventory Tracking**: Complete history of redeemed rewards
-- **Real Value Conversion**: 100 Diamonds = 1 Rupee system
+### 🎲 Interactive Casino Games
+- **Dice Game**: Guess numbers 1-6 for 5x multiplier rewards (min bet: 10 💎)
+- **Coinflip Game**: Pick heads/tails for 2x multiplier (min bet: 10 💎)
+- **Lucky Slots**: Auto-spin slot machine with up to 12x jackpot (fixed bet: 30 💎)
+- **Modal Interfaces**: All games use Discord forms for seamless interaction
+- **Auto-Cleanup**: Game results auto-delete after 3 minutes
 
-### 📊 Advanced Features
-- **3D ASCII Art**: Beautiful visual displays throughout the bot
-- **Interactive Panels**: Auto-refreshing daily claim and gambling panels
-- **Leaderboards**: Top 10 richest players with medals and rankings
-- **Statistics Tracking**: Total earned, spent, streaks, and gift card history
+### 🎁 Advanced Gift Card System
+- **User Generation**: Convert 500-100,000 💎 to gift cards
+- **Admin Generation**: Admin-only gift card creation without diamond cost
+- **Status Tracking**: Valid/Claimed/Void status with expiry dates
+- **7-Day Validity**: All gift cards expire after 7 days
+- **DM Delivery**: Automatic gift card code delivery via direct messages
+- **Legacy Support**: Maintains backward compatibility with PCRP gift cards
+
+### 📊 Management & Analytics
+- **Leaderboards**: Top 10 users with medals and detailed statistics
+- **User Statistics**: Track total earned, spent, streaks, and gift card history
+- **Admin Controls**: Comprehensive panel management and data oversight
+- **Channel Restrictions**: Commands restricted to designated channels
 - **Auto-Cleanup**: Automatic removal of old bot messages
+
 ## 🎮 Game Mechanics
 
 ### 🎲 Dice Game
-- **How to Play**: Choose number 1-6, set your bet (min 10 💎)
+- **Gameplay**: Choose a number between 1-6, place your bet
+- **Minimum Bet**: 10 💎
 - **Payout**: 5x your bet if you guess correctly
-- **Interface**: Modal form with number and bet input
+- **Interface**: Modal form with number input and bet amount
 
 ### 🪙 Coinflip Game
-- **How to Play**: Choose heads/tails (H/T shortcuts work), set bet
+- **Gameplay**: Choose heads or tails (H/T shortcuts supported)
+- **Minimum Bet**: 10 💎
 - **Payout**: 2x your bet for correct guess
-- **Interface**: Modal form with choice and bet input
+- **Interface**: Modal form with choice input and bet amount
 
 ### 🎰 Lucky Slots
-- **How to Play**: Auto-spin with 30 💎 fixed bet
-- **Symbols**: 🍒🍋🍊💎⭐🍀 with different rarities
-- **Payouts**: 
-  - 3x same symbol: 3x multiplier
-  - 3x 💎: 10x multiplier
-  - 3x ⭐: 8x multiplier  
-  - 3x 🍀: 12x multiplier (jackpot!)
+- **Gameplay**: Automatic 3-reel spin with weighted symbols
+- **Fixed Bet**: 30 💎 per spin
+- **Symbols**: 🍒🍋🍊💎⭐🍀 with varying rarities
+- **Payouts**:
+  - Two matching symbols: 1.5x multiplier
+  - Three common symbols: 3x multiplier
+  - Three 💎: 10x multiplier
+  - Three ⭐: 8x multiplier
+  - Three 🍀: 12x multiplier (JACKPOT!)
 
-## 🎁 Gift Card System
+## 🎁 Gift Card Economy
 
-## 🔧 Advanced Configuration
+### Conversion System
+- **Rate**: 100 Diamonds = 1 Rupee (PCRP virtual system)
+- **Range**: 500-100,000 💎 per gift card
+- **Validity**: 7 days from creation
+- **Status Types**: Valid, Claimed, Void (expired)
 
-### Auto-Features
-- **24H Daily Reset**: Automatic daily claim panel refresh
-- **Auto-Save**: Data saved every 5 minutes
-- **Message Cleanup**: Old bot messages automatically removed
-- **Startup Recovery**: All panels restored on bot restart
-## 🎯 Point Economy Design
+### User Generation Process
+1. Use `/generate_gift_card <amount>` command
+2. Diamonds automatically deducted from balance
+3. Unique code generated (format: GC-XXXXXXXXXXXX)
+4. Code delivered via DM with expiry information
+5. Gift card can be shared or used personally
 
-### Earning Opportunities
-- **Daily Claims**: 50-150 💎 (streak multiplied)
-- **Point Drops**: Admin events (10 💎 per claim)
-- **Transfers**: Receive from other users
-- **Future**: Giveaways, events, special activities
+### Admin Generation
+- **Admin-Only Access**: Requires admin role or authorized user ID
+- **No Cost**: Creates gift cards without deducting diamonds
+- **Security**: Codes delivered exclusively via DMs
+- **Panel Access**: Dedicated admin panel in verification channel
 
-### Spending Options
-- **Gambling**: Risk points for potential multipliers
-- **Gift Cards**: Convert to real-world rewards
-- **Transfers**: Send to friends and community members
-- **Future**: Special roles, exclusive access
-
-### Conversion Rate
-- **100 Diamonds = 1 Rupee**
-- **Purpose**: VIRTUAL redemption system
-- **Example**: 1000 💎 PCRP card = 10 Rupees value
-
-## 🛠️ Technical Features
-
-### Modern Discord Integration
-- **Slash Commands**: All commands use modern Discord API
-- **Interactive Components**: Buttons, modals, dropdowns
-- **Embeds**: Rich, colorful message formatting
-- **Ephemeral Responses**: Private error messages
-- **Auto-Sync**: Commands automatically register
-
-## Overview
-This is a Discord bot designed to manage a points-based economy system using "Diamonds" (💎) as currency. Users can earn, spend, transfer, and gamble points, redeem gift cards, and view leaderboards. The bot is built using Node.js and the `discord.js` library, with data persistence via a JSON file.
-
-## Bot Structure
-The bot is structured as a modular Node.js application with the following components:
+## 🛠️ Technical Architecture
 
 ### Core Components
-- **Client Setup**: Uses `discord.js` with intents for Guilds, GuildMessages, and MessageContent to interact with Discord servers, channels, and messages.
-- **PointsBot Class**: Manages user data, settings, and gift card requests, with methods for data persistence (`saveData`, `loadData`) and streak calculations.
-- **Data Storage**: Stores user data (points, streaks, etc.) and settings in a `bot_data.json` file, with auto-saving every 5 minutes.
-- **Channel Configuration**: Uses specific channel IDs for different functionalities (e.g., daily claims, gambling, leaderboard) defined in the `CHANNELS` object.
-- **Gift Card System**: Supports predefined gift cards (e.g., PCRP Gift Card) with costs and emojis, stored in the `GIFT_CARDS` object.
+- **Node.js Backend**: Built with discord.js v14.20.0
+- **Data Persistence**: JSON file storage with auto-save functionality
+- **Modular Design**: Organized command handling and event management
+- **Error Handling**: Comprehensive error catching with user feedback
 
-### Key Files
-- **index.js**: Main bot script containing all logic, event handlers, and command implementations.
-- **bot_data.json**: Persistent storage for user points, streaks, and gift card requests.
+### Channel Configuration
+```javascript
+const CHANNELS = {
+    daily_claims: "1387023026301960212",      // Daily claim panel
+    gambling: "1387023670634872873",          // Casino games
+    gift_cards: "1387023764012797972",        // Gift card management
+    gift_card_verification: "1387119676961849464", // Admin verification
+    transfers: "1387023571368415292",         // Point transfers
+    leaderboard: "1387023490649034782",       // Rankings display
+    information: "1387120060870688788"        // Bot information
+};
+```
 
-### Dependencies
-- `discord.js`: For Discord API interactions.
-- `fs` (Node.js File System): For reading/writing to `bot_data.json`.
-- `path`: For handling file paths.
+### Security Features
+- **Role-Based Access**: Admin commands restricted to authorized roles
+- **Channel Restrictions**: Commands only work in designated channels
+- **DM Verification**: Tests user DM availability before gift card delivery
+- **Input Validation**: Comprehensive validation for all user inputs
+- **Rate Limiting**: Built-in protections against abuse
 
-## Plan
-The bot is designed to provide an engaging economy system for Discord communities with the following goals:
-- **User Engagement**: Encourage daily interaction through daily claims with streak bonuses.
-- **Economy Management**: Allow users to earn, transfer, and spend points on gambling or gift cards.
-- **Gambling Features**: Offer fun games (Dice, Coinflip, Slots) with varying risk/reward mechanics.
-- **Reward System**: Enable point redemption for gift cards, with admin-managed processing.
-- **Leaderboard**: Showcase top users to foster competition.
-- **Admin Tools**: Provide commands for point drops and panel management.
+## 📋 Complete Command Reference
 
-## Connectivity
-The bot connects to Discord using the `discord.js` library and a bot token. Two connection methods are provided:
-1. **Hardcoded Token**: A token is included directly in the code (`client.login('MTM4NjM2...')`). **Note**: This is insecure and not recommended for production.
-2. **Environment Variable**: Uses `process.env.DISCORD_TOKEN` for secure token management via a `.env` file or server environment (recommended).
+### 💎 Daily & Points Commands
+| Command | Channel | Description |
+|---------|---------|-------------|
+| `/claim_daily` | daily_claims | Claim daily diamonds with streak bonus |
+| `/get_points [user]` | transfers | Check your or another user's balance |
+| `/transfer_points <user> <amount>` | transfers | Send diamonds to another user |
 
-### Setup Instructions
-1. **Install Node.js**: Ensure Node.js (v16 or higher) is installed.
-2. **Install Dependencies**:
-   ```bash
-   npm install discord.js
-   ```
-3. **Configure Token**:
-   - Create a `.env` file with:
-     ```env
-     DISCORD_TOKEN=your_bot_token_here
-     ```
-   - Alternatively, replace the hardcoded token in `index.js` (not recommended).
-4. **Set Channel IDs**: Update the `CHANNELS` object in `index.js` with your Discord server's channel IDs.
-5. **Run the Bot**:
-   ```bash
-   node index.js
-   ```
-6. **Invite Bot to Server**: Create a bot application in the [Discord Developer Portal](https://discord.com/developers/applications), generate an invite link with appropriate permissions, and add it to your server.
+### 🎲 Gaming Commands
+| Command | Channel | Description |
+|---------|---------|-------------|
+| `/gambling_menu` | gambling | Access all casino games |
+| Dice Game Button | gambling | Opens modal for dice betting |
+| Coinflip Button | gambling | Opens modal for coinflip betting |
+| Lucky Slots Button | gambling | Instant 30 💎 slot spin |
 
-### Data Persistence
-- User data (points, streaks, inventory, etc.) is saved to `bot_data.json` on every interaction and every 5 minutes via an auto-save interval.
-- If `bot_data.json` doesn't exist, the bot starts with an empty dataset and creates the file on the first save.
+### 🎁 Gift Card Commands
+| Command | Channel | Description |
+|---------|---------|-------------|
+| `/generate_gift_card <amount>` | gift_cards | Create gift card (500-100k 💎) |
+| `/check_gift_card <code>` | gift_cards/verification | Verify gift card status |
+| `/redeem_gift_card` | gift_cards | Legacy PCRP gift card system |
+| `/convert_points` | gift_cards | Same as redeem_gift_card |
 
-## Commands
-The bot supports the following slash commands, each restricted to specific channels defined in the `CHANNELS` object:
+### 📊 Information Commands
+| Command | Channel | Description |
+|---------|---------|-------------|
+| `/leaderboard` | leaderboard/general | View top 10 diamond holders |
+| `/test_dm` | any | Test bot's ability to send DMs |
+| `/info` | information | Show comprehensive bot information |
 
-### User Commands
-- **/claim_daily** (Channel: `daily_claims`)
-  - Description: Claim daily reward with streak bonus (50 💎 base, up to 3x multiplier).
-  - Example: `/claim_daily`
-- **/get_points** (Channel: `transfers`)
-  - Description: Check your points or another user's points.
-  - Options:
-    - `user` (optional): User to check points for.
-  - Example: `/get_points` or `/get_points @user`
-- **/transfer_points** (Channel: `transfers`)
-  - Description: Send points to another user.
-  - Options:
-    - `recipient` (required): User to send points to.
-    - `amount` (required): Number of points to send (min 1).
-  - Example: `/transfer_points @user 100`
-- **/gambling_menu** (Channel: `gambling`)
-  - Description: Open the gambling menu with options for Dice, Coinflip, and Slots.
-  - Example: `/gambling_menu`
-- **/redeem_gift_card** (Channel: `gift_cards`)
-  - Description: Open the gift card redemption menu.
-  - Example: `/redeem_gift_card`
-- **/leaderboard** (Channels: `leaderboard`, `general`)
-  - Description: View the top 10 users by points.
-  - Example: `/leaderboard`
-- **/test_dm** (Any channel)
-  - Description: Test if the bot can send DMs for gift card delivery.
-  - Example: `/test_dm`
-- **/convert_points** (Channel: `gift_cards`)
-  - Description: Convert points to a gift card (same as `/redeem_gift_card`).
-  - Example: `/convert_points`
-- **/convert_giftcard** (Channel: `gift_cards`)
-  - Description: Convert a gift card back to points (feature not yet implemented).
-  - Example: `/convert_giftcard`
+### 🛡️ Admin Commands
+| Command | Access | Description |
+|---------|--------|-------------|
+| `/send_daily_claim` | Admin | Manually send daily claim panel |
+| `/send_gift_card_panel` | Admin | Deploy gift card management panel |
+| `/send_info_panel` | Admin | Deploy information panel |
+| `/drop_points` | Admin | Point drop events (coming soon) |
+| Admin Generate Button | Admin | Create gift cards without cost |
 
-### Admin Commands
-- **/drop_points** (Any channel, Admin only)
-  - Description: Start a point drop session (feature not yet implemented).
-  - Example: `/drop_points`
-- **/send_daily_claim** (Any channel, Admin only)
-  - Description: Manually send the daily claim panel to the `daily_claims` channel.
-  - Example: `/send_daily_claim`
-- **/send_gift_card_panel** (Any channel, Admin only)
-  - Description: Send the gift card redemption panel to the `gift_cards` channel.
-  - Example: `/send_gift_card_panel`
+## 🚀 Setup & Deployment Guide
 
-## Interactive Components
-### Buttons
-- **Claim Daily Diamonds** (`claim_daily`): Claims daily reward in the `daily_claims` channel.
-- **Dice Game** (`dice_game`): Opens a modal to input guess and bet for the Dice game.
-- **Coinflip Game** (`coinflip_game`): Opens a modal to input choice (heads/tails) and bet.
-- **Lucky Slots** (`slots_game`): Plays a slots game with a fixed 30 💎 bet.
-- **Game Details** (`game_details`): Shows details of gambling games.
-- **Open Gift Card Ticket** (`open_gift_ticket`): Provides instructions for gift card support.
-- **Test DM** (`dm_test_button`): Tests if the bot can send DMs.
-- **Confirm Convert Back** (`confirm_convert_back`): Placeholder for converting gift cards back to points (not implemented).
+### Prerequisites
+- Node.js 16+ installed
+- Discord bot token from [Discord Developer Portal](https://discord.com/developers/applications)
+- Discord server with appropriate permissions
 
-### Select Menus
-- **Gift Card Selection** (`gift_card_select`): Allows users to choose a gift card to redeem.
+### Quick Start on Replit
+1. **Fork this Repl** or create new Node.js Repl
+2. **Install Dependencies**: Run `npm install` (automatically handled)
+3. **Configure Bot Token**: Set up your Discord bot token
+4. **Update Channel IDs**: Modify the `CHANNELS` object with your server's channel IDs
+5. **Set Admin Access**: Update `ADMIN_ROLE_ID` and `ADMIN_USER_IDS`
+6. **Deploy**: Use Replit's deployment feature for 24/7 operation
 
-### Modals
-- **Dice Game Modal** (`dice_modal`): Inputs for guess (1-6) and bet amount (min 10 💎).
-- **Coinflip Game Modal** (`coinflip_modal`): Inputs for choice (heads/tails) and bet amount (min 10 💎).
+### Environment Configuration
+```javascript
+// Option 1: Environment Variable (Recommended)
+client.login(process.env.DISCORD_TOKEN);
 
-## Gambling Games
-- **Dice Game**:
-  - Guess a number (1-6).
-  - Bet minimum: 10 💎.
-  - Win: 5x bet if correct.
-- **Coinflip Game**:
-  - Choose heads or tails.
-  - Bet minimum: 10 💎.
-  - Win: 2x bet if correct.
-- **Lucky Slots**:
-  - Fixed bet: 30 💎.
-  - Win multipliers: 1.5x (two matching symbols), 3x (three matching common symbols), up to 12x (three rare symbols like 🍀).
+// Option 2: Direct Token (Development only)
+client.login('your_bot_token_here');
+```
 
-## Gift Card System
-- **Available Gift Card**: PCRP Gift Card (500 💎).
-- **Process**:
-  1. Use `/redeem_gift_card` or `/convert_points` to select a gift card.
-  2. Points are deducted, and a request is created.
-  3. Admins process the request, and the gift card code is sent via DM.
-- **Pending Feature**: Converting gift cards back to points (`/convert_giftcard`).
+### Channel Setup Requirements
+Create the following channels in your Discord server:
+- **💎-daily-claims**: For daily diamond claiming
+- **🎲-gambling**: For casino games
+- **🎁-gift-cards**: For gift card management
+- **🔍-verification**: For admin gift card operations
+- **📊-transfers**: For point transfers
+- **🏆-leaderboard**: For rankings display
+- **ℹ️-information**: For bot help and commands
 
-## Startup Behavior
-On startup, the bot:
-1. Loads data from `bot_data.json`.
-2. Registers slash commands globally.
-3. Clears old bot messages in configured channels.
-4. Sends panels to the following channels:
-   - **Daily Claims**: Embed with a claim button.
-   - **Gambling**: Embed with game buttons.
-   - **Gift Cards**: Embed with gift card options and buttons.
-   - **Leaderboard**: Embed with top 10 users.
+### Admin Configuration
+```javascript
+const ADMIN_ROLE_ID = "your_admin_role_id";
+const ADMIN_USER_IDS = [
+    "admin_user_id_1",
+    "admin_user_id_2",
+    "admin_user_id_3"
+];
+```
 
-## Error Handling
-- Commands check for correct channel usage and provide feedback if used in the wrong channel.
-- Gambling games validate bets and user balances.
-- DM tests ensure users have DMs enabled.
-- Data loading handles missing files gracefully, starting fresh if needed.
+## 📊 Data Structure
 
-## Security Notes
-- **Token Security**: Avoid hardcoding the bot token in production. Use environment variables (e.g., `.env` file) to prevent accidental exposure.
-- **Permissions**: Admin commands (`/drop_points`, `/send_daily_claim`, `/send_gift_card_panel`) require Administrator permissions.
-- **DMs**: Users must enable DMs from server members for gift card delivery.
+### User Data Schema
+```json
+{
+  "users": {
+    "user_id": {
+      "points": 0,
+      "last_claim": null,
+      "streak": 0,
+      "total_earned": 0,
+      "total_spent": 0,
+      "inventory": [],
+      "gift_cards_redeemed": []
+    }
+  }
+}
+```
 
-## Troubleshooting
-- **Bot Not Responding**: Check the token, ensure the bot is invited to the server, and verify channel IDs in `CHANNELS`.
-- **Data Not Saving**: Ensure write permissions for `bot_data.json`.
-- **Command Errors**: Verify channel IDs and user permissions. Check console logs for errors.
+### Gift Card Schema
+```json
+{
+  "generated_gift_cards": {
+    "GC-CODE": {
+      "value": 5600,
+      "status": "valid",
+      "created_at": "2025-06-24T17:53:45.227Z",
+      "created_by": "user_id",
+      "claimed_by": null,
+      "claimed_at": null,
+      "void_reason": null,
+      "admin_generated": false
+    }
+  }
+}
+```
 
-## Future Improvements
-- Implement point drop system (`/drop_points`).
-- Complete gift card conversion back to points (`/convert_giftcard`).
-- Add more gift card options.
-- Enhance gambling games with additional features or animations.
-- Implement rate limiting for commands to prevent abuse.
+## 🎯 Economy Balance Design
 
-## Contributing
-To contribute:
-1. Fork the repository (if hosted).
-2. Create a feature branch.
-3. Submit a pull request with detailed changes.
+### Earning Opportunities
+- **Daily Claims**: 50-150 💎 (base + streak multiplier)
+- **Point Transfers**: Receive from other community members
+- **Future Features**: Special events, giveaways, activity rewards
 
-## License
-This project is unlicensed. Use and modify at your own risk. Ensure compliance with Discord's Terms of Service.
+### Spending Options
+- **Casino Games**: Risk diamonds for potential multipliers
+- **Gift Cards**: Convert to real-world value (PCRP system)
+- **Point Transfers**: Share with friends and community
+- **Future Features**: Special roles, exclusive access, server perks
+
+### Conversion Economics
+- **Base Rate**: 100 Diamonds = 1 Rupee
+- **Purpose**: PCRP (virtual) reward system integration
+- **Example**: 5,600 💎 gift card = 56 Rupees value
+- **Range**: 500-100,000 💎 per gift card
+
+## 🔧 Advanced Features
+
+### Startup Behavior
+1. **Data Loading**: Restores all user data from `bot_data.json`
+2. **Command Registration**: Automatically registers 16 slash commands
+3. **Panel Deployment**: Sends interactive panels to all configured channels
+4. **Cleanup Process**: Removes old bot messages to prevent duplicates
+5. **Auto-Recovery**: Restores all functionality after restarts
+
+### Auto-Management Systems
+- **5-Minute Auto-Save**: Continuous data persistence
+- **Expired Gift Card Cleanup**: Automatic status updates
+- **Message Cleanup**: Auto-deletion of temporary responses
+- **Panel Refresh**: 24-hour daily claim panel updates
+- **Error Recovery**: Graceful handling of Discord API issues
+
+### Interactive Components
+- **Buttons**: 15+ interactive buttons across all panels
+- **Modals**: 5 different modal forms for user input
+- **Select Menus**: Gift card selection dropdowns
+- **Embeds**: Rich, colorful message formatting throughout
+- **Ephemeral Responses**: Private error messages and confirmations
+
+## 🛡️ Security & Best Practices
+
+### Access Control
+- **Role Verification**: Admin commands require specific role
+- **User ID Whitelist**: Backup admin access via user IDs
+- **Channel Restrictions**: Commands locked to appropriate channels
+- **Input Sanitization**: All user inputs validated and sanitized
+
+### Data Protection
+- **Secure Token Storage**: Environment variable usage recommended
+- **DM Privacy**: Gift card codes delivered privately
+- **Auto-Deletion**: Sensitive information auto-removed
+- **Backup Strategy**: JSON file provides easy backup/restore
+
+### Performance Optimization
+- **Efficient Data Queries**: Optimized user data lookups
+- **Memory Management**: Proper cleanup of temporary data
+- **Rate Limiting**: Built-in Discord API rate limiting
+- **Error Handling**: Comprehensive try-catch blocks throughout
+
+## 🔍 Troubleshooting Guide
+
+### Common Issues
+1. **Bot Not Responding**: Check token validity and bot permissions
+2. **Commands Not Working**: Verify channel IDs in configuration
+3. **DM Delivery Fails**: Ensure users have DMs enabled from server members
+4. **Data Not Saving**: Check file write permissions for `bot_data.json`
+5. **Admin Commands Blocked**: Verify role IDs and user permissions
+
+### Debug Information
+- **Console Logging**: Comprehensive startup and error logging
+- **Status Messages**: Real-time feedback for all operations
+- **Error Embeds**: User-friendly error messages with guidance
+- **Development Mode**: Test DM functionality before deployment
+
+### Performance Monitoring
+- **Memory Usage**: Monitor for memory leaks in long-running instances
+- **API Limits**: Discord rate limiting handled automatically
+- **Data Growth**: Monitor `bot_data.json` file size over time
+- **User Activity**: Track command usage patterns
+
+## 🚀 Deployment on Replit
+
+### Step 1: Environment Setup
+1. Create a new Node.js Repl or fork this template
+2. Ensure all dependencies are installed via `npm install`
+3. Configure your Discord bot token in Replit Secrets as `DISCORD_TOKEN`
+
+### Step 2: Configuration
+1. Update channel IDs in the `CHANNELS` object
+2. Set your admin role ID and authorized user IDs
+3. Test the bot in development mode using the Run button
+
+### Step 3: Production Deployment
+1. Click **Deploy** in the Replit workspace header
+2. Choose **Reserved VM Deployment** for 24/7 operation
+3. Configure deployment settings and click **Deploy**
+4. Monitor the console output for successful startup
+
+### Step 4: Verification
+1. Test all commands in their respective channels
+2. Verify admin panel access and functionality
+3. Test gift card generation and DM delivery
+4. Monitor the leaderboard and data persistence
+
+## 📈 Future Roadmap
+
+### Planned Features
+- **Point Drop System**: Community-wide diamond events
+- **Enhanced Casino**: Additional games and tournament modes
+- **Achievement System**: Badges and milestones for users
+- **Economy Analytics**: Detailed statistics and reports
+- **Mobile Integration**: Enhanced mobile Discord experience
+
+### Expansion Possibilities
+- **Multi-Server Support**: Cross-server diamond economy
+- **API Integration**: External reward system connections
+- **Advanced Analytics**: User behavior and engagement metrics
+- **Seasonal Events**: Holiday-themed activities and bonuses
+- **Community Features**: Guilds, teams, and collaborative challenges
+
+## 📄 License & Support
+
+### License
+This project is provided as-is for educational and community use. Please ensure compliance with Discord's Terms of Service and Community Guidelines when deploying.
+
+### Support
+- **Documentation**: This comprehensive README
+- **Code Comments**: Extensive inline documentation
+- **Error Messages**: User-friendly guidance throughout
+- **Community**: Share improvements and customizations
+
+### Contributing
+1. Fork the repository
+2. Create feature branches for new functionality
+3. Test thoroughly in development environment
+4. Submit pull requests with detailed descriptions
 
 ---
 
-**Developed by**: [PRIMOIX]  
-**Last Updated**: June 24, 2025
+**Bot Version**: 2.0  
+**Discord.js Version**: 14.20.0  
+**Node.js Requirement**: 16+  
+**Last Updated**: June 24, 2025  
+**Developer**: PRIMOIX  
+
+**Deployed on**: [Replit](https://replit.com) - The collaborative browser-based IDE for building and deploying applications.
