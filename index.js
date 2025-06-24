@@ -37,6 +37,7 @@ const CHANNELS = {
     gift_cards: "1387023764012797972", // Gift Card Redemption Center
     gift_card_verification: "1387119676961849464", // Gift Card Verification Panel
     information: "1387120060870688788", // Information Panel
+    system_commands: "1387120060870688789", // System Commands Panel
     general: null, // Can be set to allow leaderboard from general channel
 };
 
@@ -182,19 +183,24 @@ setInterval(
             // Clean up old user-generated gift cards
             const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
             let cleanedCards = 0;
-            
-            for (const [code, card] of Object.entries(pointsSystem.data.generated_gift_cards)) {
+
+            for (const [code, card] of Object.entries(
+                pointsSystem.data.generated_gift_cards,
+            )) {
                 const cardDate = new Date(card.created_at);
-                if (cardDate < oneDayAgo && (card.status === "void" || card.status === "claimed")) {
+                if (
+                    cardDate < oneDayAgo &&
+                    (card.status === "void" || card.status === "claimed")
+                ) {
                     delete pointsSystem.data.generated_gift_cards[code];
                     cleanedCards++;
                 }
             }
-            
+
             // Clean up old point drop tickets
             const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
             let cleanedTickets = 0;
-            
+
             for (const [ticketId, ticket] of Object.entries(pointDropTickets)) {
                 const ticketDate = new Date(ticket.createdAt);
                 if (ticketDate < sevenDaysAgo) {
@@ -202,18 +208,841 @@ setInterval(
                     cleanedTickets++;
                 }
             }
-            
+
             if (cleanedCards > 0 || cleanedTickets > 0) {
-                console.log(`🧹 Auto-cleanup: ${cleanedCards} cards, ${cleanedTickets} tickets removed`);
+                console.log(
+                    `🧹 Auto-cleanup: ${cleanedCards} cards, ${cleanedTickets} tickets removed`,
+                );
                 if (cleanedCards > 0) await pointsSystem.saveData();
             }
-            
         } catch (error) {
             console.error("Error during auto-cleanup:", error);
         }
     },
     60 * 60 * 1000, // Every hour
 );
+
+// UNO Game System
+let activeUnoGames = new Map();
+
+// AI Bot Players
+const aiBotPlayers = [
+    { id: "ai_bot_1", name: "🤖 UNO Master", difficulty: "expert" },
+    { id: "ai_bot_2", name: "🎮 Card Shark", difficulty: "hard" },
+    { id: "ai_bot_3", name: "🎯 Lucky Player", difficulty: "medium" },
+    { id: "ai_bot_4", name: "🎲 Rookie Bot", difficulty: "easy" },
+];
+
+class UnoGame {
+    constructor(channelId, creatorId) {
+        this.gameId = `uno_${Date.now()}`;
+        this.channelId = channelId;
+        this.creatorId = creatorId;
+        this.players = [creatorId];
+        this.status = "lobby";
+        this.deck = this.createDeck();
+        this.hands = new Map();
+        this.discardPile = [];
+        this.currentPlayerIndex = 0;
+        this.direction = 1;
+        this.autoCleanupTimer = null;
+        this.betAmount = 0;
+        this.totalPrizePool = 0;
+        this.playerBets = new Map();
+        this.finishedPlayers = [];
+        this.aiPlayers = new Map(); // Track AI players
+        this.gameStartTime = null;
+        this.prizeDistribution = {
+            1: 0.5, // Winner gets 50%
+            2: 0.3, // Second place gets 30%
+            3: 0.2, // Third place gets 20%
+        };
+    }
+
+    addAIPlayer() {
+        if (this.players.length >= 10) return false;
+
+        const availableAI = aiBotPlayers.filter(
+            (bot) => !this.players.includes(bot.id),
+        );
+        if (availableAI.length === 0) return false;
+
+        const aiBot =
+            availableAI[Math.floor(Math.random() * availableAI.length)];
+        this.players.push(aiBot.id);
+        this.aiPlayers.set(aiBot.id, aiBot);
+
+        // AI doesn't need to pay bet, but add to prize pool for balance
+        if (this.betAmount > 0) {
+            this.totalPrizePool += this.betAmount;
+        }
+
+        return aiBot;
+    }
+
+    async makeAIMove(aiPlayerId) {
+        const aiData = this.aiPlayers.get(aiPlayerId);
+        if (!aiData) return false;
+
+        const hand = this.hands.get(aiPlayerId);
+        const topCard = this.discardPile[this.discardPile.length - 1];
+        const playableCards = hand.filter((card) =>
+            this.canPlayCard(card, topCard),
+        );
+
+        // AI decision making based on difficulty
+        let cardToPlay = null;
+
+        if (playableCards.length > 0) {
+            switch (aiData.difficulty) {
+                case "easy":
+                    // 70% chance to play first playable card
+                    if (Math.random() < 0.7) {
+                        cardToPlay = playableCards[0];
+                    }
+                    break;
+                case "medium":
+                    // 85% chance to play, prefers action cards
+                    if (Math.random() < 0.85) {
+                        const actionCards = playableCards.filter((card) =>
+                            [
+                                "skip",
+                                "reverse",
+                                "draw2",
+                                "wild",
+                                "wild_draw4",
+                            ].includes(card.value),
+                        );
+                        cardToPlay =
+                            actionCards.length > 0
+                                ? actionCards[0]
+                                : playableCards[0];
+                    }
+                    break;
+                case "hard":
+                    // 90% chance to play, strategic card choice
+                    if (Math.random() < 0.9) {
+                        if (hand.length === 2) {
+                            // Save wild cards for last
+                            const nonWild = playableCards.filter(
+                                (card) => card.color !== "wild",
+                            );
+                            cardToPlay =
+                                nonWild.length > 0
+                                    ? nonWild[0]
+                                    : playableCards[0];
+                        } else {
+                            cardToPlay = playableCards[0];
+                        }
+                    }
+                    break;
+                case "expert":
+                    // 95% chance to play, very strategic
+                    if (Math.random() < 0.95) {
+                        // Complex AI logic here
+                        cardToPlay = this.getOptimalAICard(
+                            playableCards,
+                            hand,
+                            topCard,
+                        );
+                    }
+                    break;
+            }
+        }
+
+        if (cardToPlay) {
+            const handIndex = hand.indexOf(cardToPlay);
+            hand.splice(handIndex, 1);
+            this.discardPile.push(cardToPlay);
+            return { action: "play", card: cardToPlay };
+        } else {
+            // Draw a card
+            if (this.deck.length > 0) {
+                const drawnCard = this.deck.pop();
+                hand.push(drawnCard);
+                return { action: "draw", card: drawnCard };
+            }
+        }
+
+        return false;
+    }
+
+    getOptimalAICard(playableCards, hand, topCard) {
+        // Expert AI strategy
+        if (hand.length === 2) {
+            // Try to play non-wild cards when close to winning
+            const nonWild = playableCards.filter(
+                (card) => card.color !== "wild",
+            );
+            if (nonWild.length > 0) return nonWild[0];
+        }
+
+        // Prefer action cards to disrupt opponents
+        const actionCards = playableCards.filter((card) =>
+            ["skip", "reverse", "draw2"].includes(card.value),
+        );
+        if (actionCards.length > 0) return actionCards[0];
+
+        // Save wild cards for strategic moments
+        const wildCards = playableCards.filter((card) => card.color === "wild");
+        const regularCards = playableCards.filter(
+            (card) => card.color !== "wild",
+        );
+
+        return regularCards.length > 0 ? regularCards[0] : wildCards[0];
+    }
+
+    createDeck() {
+        const colors = ["red", "blue", "green", "yellow"];
+        const values = [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "skip",
+            "reverse",
+            "draw2",
+        ];
+        const deck = [];
+
+        // Number cards and action cards
+        for (const color of colors) {
+            for (const value of values) {
+                const cardDisplay = this.getCardEmoji(color, value);
+                deck.push({
+                    color,
+                    value,
+                    emoji: cardDisplay.emoji,
+                    image: cardDisplay.image,
+                });
+                if (value !== "0") {
+                    // Add second copy except for 0
+                    deck.push({
+                        color,
+                        value,
+                        emoji: cardDisplay.emoji,
+                        image: cardDisplay.image,
+                    });
+                }
+            }
+        }
+
+        // Wild cards
+        for (let i = 0; i < 4; i++) {
+            const wildDisplay = this.getCardEmoji("wild", "wild");
+            const wildDraw4Display = this.getCardEmoji("wild", "wild_draw4");
+            deck.push({
+                color: "wild",
+                value: "wild",
+                emoji: wildDisplay.emoji,
+                image: wildDisplay.image,
+            });
+            deck.push({
+                color: "wild",
+                value: "wild_draw4",
+                emoji: wildDraw4Display.emoji,
+                image: wildDraw4Display.image,
+            });
+        }
+
+        return this.shuffleDeck(deck);
+    }
+
+    getCardEmoji(color, value) {
+        // Use online UNO card images
+        const cardImages = {
+            // Red cards
+            red_0: "https://i.imgur.com/8XqvYjK.png",
+            red_1: "https://i.imgur.com/mKJ2VHt.png",
+            red_2: "https://i.imgur.com/7Nf9sZM.png",
+            red_3: "https://i.imgur.com/vGq8fJp.png",
+            red_4: "https://i.imgur.com/2Mz7Xjq.png",
+            red_5: "https://i.imgur.com/8tHvBjM.png",
+            red_6: "https://i.imgur.com/Kq3mJtP.png",
+            red_7: "https://i.imgur.com/9Pv6LjN.png",
+            red_8: "https://i.imgur.com/HtVq2mK.png",
+            red_9: "https://i.imgur.com/LmP9VjQ.png",
+            red_skip: "https://i.imgur.com/QmV7JtK.png",
+            red_reverse: "https://i.imgur.com/RtN8MjL.png",
+            red_draw2: "https://i.imgur.com/VmQ9LtP.png",
+
+            // Blue cards
+            blue_0: "https://i.imgur.com/NtP8VjM.png",
+            blue_1: "https://i.imgur.com/MtQ7VjK.png",
+            blue_2: "https://i.imgur.com/PtR9VjL.png",
+            blue_3: "https://i.imgur.com/QtS8VjN.png",
+            blue_4: "https://i.imgur.com/RtT9VjP.png",
+            blue_5: "https://i.imgur.com/StU8VjQ.png",
+            blue_6: "https://i.imgur.com/TtV9VjR.png",
+            blue_7: "https://i.imgur.com/UtW8VjS.png",
+            blue_8: "https://i.imgur.com/VtX9VjT.png",
+            blue_9: "https://i.imgur.com/WtY8VjU.png",
+            blue_skip: "https://i.imgur.com/XtZ9VjV.png",
+            blue_reverse: "https://i.imgur.com/YtA8VjW.png",
+            blue_draw2: "https://i.imgur.com/ZtB9VjX.png",
+
+            // Green cards
+            green_0: "https://i.imgur.com/AtC8VjY.png",
+            green_1: "https://i.imgur.com/BtD9VjZ.png",
+            green_2: "https://i.imgur.com/CtE8Vja.png",
+            green_3: "https://i.imgur.com/DtF9Vjb.png",
+            green_4: "https://i.imgur.com/EtG8Vjc.png",
+            green_5: "https://i.imgur.com/FtH9Vjd.png",
+            green_6: "https://i.imgur.com/GtI8Vje.png",
+            green_7: "https://i.imgur.com/HtJ9Vjf.png",
+            green_8: "https://i.imgur.com/ItK8Vjg.png",
+            green_9: "https://i.imgur.com/JtL9Vjh.png",
+            green_skip: "https://i.imgur.com/KtM8Vji.png",
+            green_reverse: "https://i.imgur.com/LtN9Vjj.png",
+            green_draw2: "https://i.imgur.com/MtO8Vjk.png",
+
+            // Yellow cards
+            yellow_0: "https://i.imgur.com/NtP9Vjl.png",
+            yellow_1: "https://i.imgur.com/OtQ8Vjm.png",
+            yellow_2: "https://i.imgur.com/PtR9Vjn.png",
+            yellow_3: "https://i.imgur.com/QtS8Vjo.png",
+            yellow_4: "https://i.imgur.com/RtT9Vjp.png",
+            yellow_5: "https://i.imgur.com/StU8Vjq.png",
+            yellow_6: "https://i.imgur.com/TtV9Vjr.png",
+            yellow_7: "https://i.imgur.com/UtW8Vjs.png",
+            yellow_8: "https://i.imgur.com/VtX9Vjt.png",
+            yellow_9: "https://i.imgur.com/WtY8Vju.png",
+            yellow_skip: "https://i.imgur.com/XtZ9Vjv.png",
+            yellow_reverse: "https://i.imgur.com/YtA8Vjw.png",
+            yellow_draw2: "https://i.imgur.com/ZtB9Vjx.png",
+
+            // Wild cards
+            wild: "https://i.imgur.com/AtC9Vjy.png",
+            wild_draw4: "https://i.imgur.com/BtD8Vjz.png",
+        };
+
+        const cardKey = color === "wild" ? value : `${color}_${value}`;
+        const imageUrl = cardImages[cardKey];
+
+        // Fallback to emoji if image not found
+        const colorEmojis = {
+            red: "🔴",
+            blue: "🔵",
+            green: "🟢",
+            yellow: "🟡",
+        };
+
+        const valueEmojis = {
+            skip: "⏭️",
+            reverse: "🔄",
+            draw2: "➕2️⃣",
+            wild: "🌈",
+            wild_draw4: "🌈⚡",
+        };
+
+        if (color === "wild") {
+            return { emoji: valueEmojis[value] || "🌈", image: imageUrl };
+        }
+
+        const emoji = valueEmojis[value]
+            ? `${colorEmojis[color]}${valueEmojis[value]}`
+            : `${colorEmojis[color]}${value}`;
+
+        return { emoji, image: imageUrl };
+    }
+
+    shuffleDeck(deck) {
+        for (let i = deck.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [deck[i], deck[j]] = [deck[j], deck[i]];
+        }
+        return deck;
+    }
+
+    dealCards() {
+        for (const playerId of this.players) {
+            this.hands.set(playerId, []);
+            for (let i = 0; i < 7; i++) {
+                this.hands.get(playerId).push(this.deck.pop());
+            }
+        }
+        // Start discard pile
+        this.discardPile.push(this.deck.pop());
+    }
+
+    addPlayer(userId) {
+        if (!this.players.includes(userId) && this.players.length < 10) {
+            this.players.push(userId);
+            return true;
+        }
+        return false;
+    }
+
+    getCurrentPlayer() {
+        return this.players[this.currentPlayerIndex];
+    }
+
+    nextTurn() {
+        this.currentPlayerIndex =
+            (this.currentPlayerIndex + this.direction + this.players.length) %
+            this.players.length;
+    }
+
+    canPlayCard(card, topCard) {
+        if (card.color === "wild") return true;
+        return card.color === topCard.color || card.value === topCard.value;
+    }
+
+    startAutoCleanup(message) {
+        this.autoCleanupTimer = setTimeout(async () => {
+            try {
+                await message.delete();
+                activeUnoGames.delete(this.gameId);
+                console.log(`🧹 Auto-cleaned UNO game ${this.gameId}`);
+            } catch (error) {
+                console.log("Could not auto-clean UNO game:", error.message);
+            }
+        }, 10 * 1000); // 10 seconds
+    }
+
+    cancelAutoCleanup() {
+        if (this.autoCleanupTimer) {
+            clearTimeout(this.autoCleanupTimer);
+            this.autoCleanupTimer = null;
+        }
+    }
+
+    setBetAmount(amount) {
+        this.betAmount = amount;
+        this.totalPrizePool = amount * this.players.length;
+    }
+
+    addPlayerBet(userId, amount) {
+        this.playerBets.set(userId, amount);
+        this.totalPrizePool += amount;
+    }
+
+    finishPlayer(userId) {
+        if (!this.finishedPlayers.includes(userId)) {
+            this.finishedPlayers.push(userId);
+        }
+    }
+
+    calculatePrizeDistribution() {
+        const prizes = {};
+        let remainingPool = this.totalPrizePool;
+
+        for (let i = 0; i < Math.min(this.finishedPlayers.length, 3); i++) {
+            const playerId = this.finishedPlayers[i];
+            const position = i + 1;
+            const percentage = this.prizeDistribution[position] || 0;
+            const prize = Math.floor(this.totalPrizePool * percentage);
+            prizes[playerId] = prize;
+            remainingPool -= prize;
+        }
+
+        return prizes;
+    }
+
+    getCardImageEmbed(card) {
+        if (card.image) {
+            return {
+                image: { url: card.image },
+                description: `**Card:** ${card.emoji}`,
+            };
+        }
+        return null;
+    }
+}
+
+function createUnoLobbyButtons(gameId) {
+    const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`uno_join_${gameId}`)
+            .setLabel("🎮 Join Game")
+            .setStyle(ButtonStyle.Success)
+            .setEmoji("🃏"),
+        new ButtonBuilder()
+            .setCustomId(`uno_add_ai_${gameId}`)
+            .setLabel("🤖 Add AI Bot")
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji("🎯"),
+        new ButtonBuilder()
+            .setCustomId(`uno_start_${gameId}`)
+            .setLabel("▶️ Start Game")
+            .setStyle(ButtonStyle.Primary)
+            .setEmoji("🚀"),
+    );
+
+    const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`uno_cancel_${gameId}`)
+            .setLabel("❌ Cancel")
+            .setStyle(ButtonStyle.Danger),
+    );
+
+    return [row1, row2];
+}
+
+function createUnoGameButtons(gameId) {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`uno_play_${gameId}`)
+            .setLabel("🎴 Play Card")
+            .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+            .setCustomId(`uno_draw_${gameId}`)
+            .setLabel("📥 Draw Card")
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId(`uno_call_${gameId}`)
+            .setLabel("🗣️ Call UNO!")
+            .setStyle(ButtonStyle.Danger),
+    );
+}
+
+async function startUnoGame(channelId, creatorId, betAmount = 0) {
+    const game = new UnoGame(channelId, creatorId);
+    if (betAmount > 0) {
+        game.setBetAmount(betAmount);
+        // Deduct bet from creator
+        const userData = pointsSystem.getUserData(creatorId);
+        userData.points -= betAmount;
+        userData.total_spent += betAmount;
+        game.addPlayerBet(creatorId, betAmount);
+        await pointsSystem.saveData();
+    }
+
+    activeUnoGames.set(game.gameId, game);
+
+    const channel = client.channels.cache.get(channelId);
+    if (!channel) return;
+
+    try {
+        const creator = await client.users.fetch(creatorId);
+
+        const bettingInfo =
+            betAmount > 0
+                ? `💎 **Diamond Betting:** ${betAmount} 💎 per player\n` +
+                  `🏆 **Prize Pool:** ${game.totalPrizePool} 💎\n` +
+                  `🥇 **1st Place:** ${Math.floor(game.totalPrizePool * 0.5)} 💎 (50%)\n` +
+                  `🥈 **2nd Place:** ${Math.floor(game.totalPrizePool * 0.3)} 💎 (30%)\n` +
+                  `🥉 **3rd Place:** ${Math.floor(game.totalPrizePool * 0.2)} 💎 (20%)\n\n`
+                : "";
+
+        const embed = new EmbedBuilder()
+            .setTitle("🃏 UNO Showdown 3D - Diamond Betting Lobby")
+            .setDescription(
+                `**Game Creator:** ${creator.displayName}\n\n` +
+                    `**🎮 UNO BETTING LOBBY 🎮**\n` +
+                    `\`\`\`\n` +
+                    `    🃏 UNO SHOWDOWN 🃏\n` +
+                    `  ╔═══════════════════╗\n` +
+                    `  ║ 🎮 Players: 1/10  ║\n` +
+                    `  ║ 💎 Betting: ${betAmount} 💎   ║\n` +
+                    `  ║ 🚀 Ready to Start ║\n` +
+                    `  ╚═══════════════════╝\n` +
+                    `\`\`\`\n\n` +
+                    bettingInfo +
+                    `**Players (1):** ${creator.displayName} ✅\n\n` +
+                    `**Rules:**\n` +
+                    `• 2-10 players can join\n` +
+                    `• Each player must bet ${betAmount} 💎 to join\n` +
+                    `• Match color or number to play\n` +
+                    `• Call UNO when you have 1 card!\n` +
+                    `• Winners get prize distribution!\n\n` +
+                    `**Special Cards:**\n` +
+                    `🔄 Reverse • ⏭️ Skip • ➕2️⃣ Draw 2\n` +
+                    `🌈 Wild • 🌈⚡ Wild Draw 4\n\n` +
+                    `⚠️ **Auto-cleanup in 10 seconds!**`,
+            )
+            .setColor(0xffd700)
+            .setThumbnail("https://i.imgur.com/AtC9Vjy.png")
+            .setTimestamp();
+
+        const components = createUnoLobbyButtons(game.gameId);
+        const message = await channel.send({
+            embeds: [embed],
+            components: [components],
+        });
+
+        // Start auto-cleanup timer
+        game.startAutoCleanup(message);
+
+        return message;
+    } catch (error) {
+        console.error("Error starting UNO game:", error);
+        activeUnoGames.delete(game.gameId);
+    }
+}
+
+async function handleUnoJoin(interaction, gameId) {
+    const game = activeUnoGames.get(gameId);
+    if (!game) {
+        return await interaction.reply({
+            content: "❌ This game no longer exists!",
+            ephemeral: true,
+        });
+    }
+
+    if (game.status !== "lobby") {
+        return await interaction.reply({
+            content: "❌ This game has already started!",
+            ephemeral: true,
+        });
+    }
+
+    // Check betting requirements
+    if (game.betAmount > 0) {
+        const userData = pointsSystem.getUserData(interaction.user.id);
+        if (userData.points < game.betAmount) {
+            return await interaction.reply({
+                content: `❌ You need ${game.betAmount} 💎 to join this betting game! You have ${userData.points} 💎`,
+                ephemeral: true,
+            });
+        }
+    }
+
+    if (game.addPlayer(interaction.user.id)) {
+        // Deduct bet if required
+        if (game.betAmount > 0) {
+            const userData = pointsSystem.getUserData(interaction.user.id);
+            userData.points -= game.betAmount;
+            userData.total_spent += game.betAmount;
+            game.addPlayerBet(interaction.user.id, game.betAmount);
+            await pointsSystem.saveData();
+        }
+
+        // Cancel auto-cleanup when someone joins
+        game.cancelAutoCleanup();
+
+        await updateUnoLobbyDisplay(interaction, game);
+
+        await interaction.followUp({
+            content: `🎮 ${interaction.user.displayName} joined the UNO betting game and paid ${game.betAmount} 💎!`,
+            ephemeral: false,
+        });
+    } else {
+        await interaction.reply({
+            content: "❌ You're already in this game or it's full!",
+            ephemeral: true,
+        });
+    }
+}
+
+async function handleUnoAddAI(interaction, gameId) {
+    const game = activeUnoGames.get(gameId);
+    if (!game) {
+        return await interaction.reply({
+            content: "❌ This game no longer exists!",
+            ephemeral: true,
+        });
+    }
+
+    if (game.status !== "lobby") {
+        return await interaction.reply({
+            content: "❌ This game has already started!",
+            ephemeral: true,
+        });
+    }
+
+    if (interaction.user.id !== game.creatorId) {
+        return await interaction.reply({
+            content: "❌ Only the game creator can add AI bots!",
+            ephemeral: true,
+        });
+    }
+
+    const aiBot = game.addAIPlayer();
+    if (aiBot) {
+        game.cancelAutoCleanup();
+        await updateUnoLobbyDisplay(interaction, game);
+
+        await interaction.followUp({
+            content: `🤖 ${aiBot.name} (${aiBot.difficulty.toUpperCase()} AI) joined the game!`,
+            ephemeral: false,
+        });
+    } else {
+        await interaction.reply({
+            content:
+                "❌ Cannot add more AI bots (game full or no AI available)!",
+            ephemeral: true,
+        });
+    }
+}
+
+async function updateUnoLobbyDisplay(interaction, game) {
+    const playerList = await Promise.all(
+        game.players.map(async (id) => {
+            if (game.aiPlayers.has(id)) {
+                const aiData = game.aiPlayers.get(id);
+                return `${aiData.name} ✅ (${aiData.difficulty.toUpperCase()} AI)`;
+            }
+            try {
+                const user = await client.users.fetch(id);
+                return user.displayName + " ✅";
+            } catch {
+                return `User ${id} ✅`;
+            }
+        }),
+    );
+
+    const bettingInfo =
+        game.betAmount > 0
+            ? `💎 **Diamond Betting:** ${game.betAmount} 💎 per player\n` +
+              `🏆 **Prize Pool:** ${game.totalPrizePool} 💎\n` +
+              `🥇 **1st Place:** ${Math.floor(game.totalPrizePool * 0.5)} 💎 (50%)\n` +
+              `🥈 **2nd Place:** ${Math.floor(game.totalPrizePool * 0.3)} 💎 (30%)\n` +
+              `🥉 **3rd Place:** ${Math.floor(game.totalPrizePool * 0.2)} 💎 (20%)\n\n`
+            : "";
+
+    const embed = new EmbedBuilder()
+        .setTitle("🃏 UNO Showdown 3D - Diamond Betting Lobby")
+        .setDescription(
+            `**Game Creator:** ${playerList[0].replace(" ✅", "").replace(" (EASY AI)", "").replace(" (MEDIUM AI)", "").replace(" (HARD AI)", "").replace(" (EXPERT AI)", "")}\n\n` +
+                `**🎮 UNO BETTING LOBBY 🎮**\n` +
+                `\`\`\`\n` +
+                `    🃏 UNO SHOWDOWN 🃏\n` +
+                `  ╔═══════════════════╗\n` +
+                `  ║ 🎮 Players: ${game.players.length}/10  ║\n` +
+                `  ║ 💎 Betting: ${game.betAmount} 💎   ║\n` +
+                `  ║ 🤖 AI Support: ON ║\n` +
+                `  ║ 🚀 Ready to Start ║\n` +
+                `  ╚═══════════════════╝\n` +
+                `\`\`\`\n\n` +
+                bettingInfo +
+                `**Players (${game.players.length}):** ${playerList.join(", ")}\n\n` +
+                `**Rules:**\n` +
+                `• 2-10 players can join\n` +
+                `• 🤖 AI bots can fill empty slots\n` +
+                `• Each player must bet ${game.betAmount} 💎\n` +
+                `• Match color or number to play\n` +
+                `• Call UNO when you have 1 card!\n` +
+                `• Winners get prize distribution!\n\n` +
+                `**AI Difficulty Levels:**\n` +
+                `🎲 EASY • 🎯 MEDIUM • 🎮 HARD • 🤖 EXPERT\n\n` +
+                `**Special Cards:**\n` +
+                `🔄 Reverse • ⏭️ Skip • ➕2️⃣ Draw 2\n` +
+                `🌈 Wild • 🌈⚡ Wild Draw 4\n\n` +
+                `✅ **Game active - auto-cleanup disabled**`,
+        )
+        .setColor(0x00ff00)
+        .setTimestamp();
+
+    const components = createUnoLobbyButtons(game.gameId);
+    await interaction.update({ embeds: [embed], components });
+}
+
+async function handleUnoStart(interaction, gameId) {
+    const game = activeUnoGames.get(gameId);
+    if (!game) {
+        return await interaction.reply({
+            content: "❌ This game no longer exists!",
+            ephemeral: true,
+        });
+    }
+
+    if (interaction.user.id !== game.creatorId) {
+        return await interaction.reply({
+            content: "❌ Only the game creator can start the game!",
+            ephemeral: true,
+        });
+    }
+
+    if (game.players.length < 2) {
+        return await interaction.reply({
+            content: "❌ Need at least 2 players to start!",
+            ephemeral: true,
+        });
+    }
+
+    game.status = "active";
+    game.dealCards();
+
+    const currentPlayer = await client.users.fetch(game.getCurrentPlayer());
+    const topCard = game.discardPile[game.discardPile.length - 1];
+
+    const embed = new EmbedBuilder()
+        .setTitle("🃏 UNO Showdown 3D - Game Started!")
+        .setDescription(
+            `**🎮 GAME ACTIVE 🎮**\n` +
+                `\`\`\`\n` +
+                `    🃏 UNO IN PROGRESS 🃏\n` +
+                `  ╔═══════════════════════╗\n` +
+                `  ║ Players: ${game.players.length}           ║\n` +
+                `  ║ Current: ${currentPlayer.displayName.substring(0, 10)}    ║\n` +
+                `  ╚═══════════════════════╝\n` +
+                `\`\`\`\n\n` +
+                `**Current Player:** ${currentPlayer.displayName}\n` +
+                `**Top Card:** ${topCard.emoji}\n` +
+                `**Direction:** ${game.direction === 1 ? "➡️ Clockwise" : "⬅️ Counter-clockwise"}\n\n` +
+                `**Players:**\n` +
+                (
+                    await Promise.all(
+                        game.players.map(async (id, index) => {
+                            const user = await client.users.fetch(id);
+                            const cards = game.hands.get(id).length;
+                            const indicator =
+                                index === game.currentPlayerIndex ? "👉" : "  ";
+                            return `${indicator} ${user.displayName}: ${cards} cards`;
+                        }),
+                    )
+                ).join("\n") +
+                `\n\n**Instructions:**\n` +
+                `• Use buttons to play, draw, or call UNO\n` +
+                `• Match the color or number\n` +
+                `• Call UNO when you have 1 card left!\n\n` +
+                `⚠️ **Auto-cleanup in 10 seconds if no activity!**`,
+        )
+        .setColor(0x00ff00)
+        .setTimestamp();
+
+    const components = createUnoGameButtons(game.gameId);
+    await interaction.update({ embeds: [embed], components: [components] });
+
+    // Restart auto-cleanup for the active game
+    game.startAutoCleanup(interaction.message);
+}
+
+async function handleUnoCancel(interaction, gameId) {
+    const game = activeUnoGames.get(gameId);
+    if (!game) {
+        return await interaction.reply({
+            content: "❌ This game no longer exists!",
+            ephemeral: true,
+        });
+    }
+
+    if (interaction.user.id !== game.creatorId) {
+        return await interaction.reply({
+            content: "❌ Only the game creator can cancel the game!",
+            ephemeral: true,
+        });
+    }
+
+    game.cancelAutoCleanup();
+    activeUnoGames.delete(gameId);
+
+    const embed = new EmbedBuilder()
+        .setTitle("❌ UNO Game Cancelled")
+        .setDescription("The game has been cancelled by the creator.")
+        .setColor(0xff0000);
+
+    await interaction.update({ embeds: [embed], components: [] });
+
+    // Auto-delete cancellation message
+    setTimeout(async () => {
+        try {
+            await interaction.message.delete();
+        } catch (error) {
+            console.log(
+                "Could not delete cancelled UNO message:",
+                error.message,
+            );
+        }
+    }, 5000);
+}
 
 // Utility functions
 function createDailyClaimButtons() {
@@ -440,7 +1269,9 @@ client.once("ready", async () => {
 
         new SlashCommandBuilder()
             .setName("cleanup_old_messages")
-            .setDescription("Admin: Clean up old bot messages and user interactions")
+            .setDescription(
+                "Admin: Clean up old bot messages and user interactions",
+            )
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
         new SlashCommandBuilder()
@@ -462,6 +1293,23 @@ client.once("ready", async () => {
                     .setName("ticket_id")
                     .setDescription("Ticket ID to reject")
                     .setRequired(true),
+            )
+            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+        new SlashCommandBuilder()
+            .setName("uno")
+            .setDescription("Start a UNO Showdown 3D game")
+            .addChannelOption((option) =>
+                option
+                    .setName("channel")
+                    .setDescription("Channel to start the game in (optional)")
+                    .setRequired(false),
+            ),
+
+        new SlashCommandBuilder()
+            .setName("send_system_panel")
+            .setDescription(
+                "Admin: Send the comprehensive system commands panel",
             )
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
     ];
@@ -554,6 +1402,12 @@ async function handleSlashCommand(interaction) {
                 break;
             case "cleanup_old_messages":
                 await handleCleanupOldMessages(interaction);
+                break;
+            case "uno":
+                await handleUnoCommand(interaction);
+                break;
+            case "send_system_panel":
+                await handleSendSystemPanel(interaction);
                 break;
         }
     } catch (error) {
@@ -684,7 +1538,7 @@ async function handleButtonInteraction(interaction) {
             case "point_drop_guidelines":
                 await showPointDropGuidelines(interaction);
                 break;
-            
+
             case "point_drop_history":
                 await showPointDropHistory(interaction);
                 break;
@@ -694,6 +1548,30 @@ async function handleButtonInteraction(interaction) {
         if (customId.startsWith("mine_diamonds_")) {
             const eventId = customId.replace("mine_diamonds_", "");
             await handleDiamondMining(interaction, eventId);
+        }
+
+        // Handle UNO game buttons
+        if (customId.startsWith("uno_join_")) {
+            const gameId = customId.replace("uno_join_", "");
+            await handleUnoJoin(interaction, gameId);
+        } else if (customId.startsWith("uno_add_ai_")) {
+            const gameId = customId.replace("uno_add_ai_", "");
+            await handleUnoAddAI(interaction, gameId);
+        } else if (customId.startsWith("uno_start_")) {
+            const gameId = customId.replace("uno_start_", "");
+            await handleUnoStart(interaction, gameId);
+        } else if (customId.startsWith("uno_cancel_")) {
+            const gameId = customId.replace("uno_cancel_", "");
+            await handleUnoCancel(interaction, gameId);
+        } else if (customId.startsWith("uno_play_")) {
+            const gameId = customId.replace("uno_play_", "");
+            await handleUnoPlay(interaction, gameId);
+        } else if (customId.startsWith("uno_draw_")) {
+            const gameId = customId.replace("uno_draw_", "");
+            await handleUnoDraw(interaction, gameId);
+        } else if (customId.startsWith("uno_call_")) {
+            const gameId = customId.replace("uno_call_", "");
+            await handleUnoCall(interaction, gameId);
         }
     } catch (error) {
         console.error("Error handling button interaction:", error);
@@ -722,7 +1600,8 @@ async function handleModalSubmit(interaction) {
             await handleAdminGiftCardGeneration(interaction);
         } else if (customId === "point_drop_ticket_modal") {
             await handlePointDropTicketSubmission(interaction);
-        
+        } else if (customId.startsWith("uno_bet_modal_")) {
+            await handleUnoBetModal(interaction);
         }
     } catch (error) {
         console.error("Error handling modal submit:", error);
@@ -2328,6 +3207,54 @@ async function handleRejectPointDrop(interaction) {
     });
 }
 
+async function handleUnoCommand(interaction) {
+    const targetChannel =
+        interaction.options.getChannel("channel") || interaction.channel;
+
+    // Check if target channel is the specified channel ID
+    if (targetChannel.id !== "1387168027027574875") {
+        const embed = new EmbedBuilder()
+            .setTitle("❌ Wrong Channel")
+            .setDescription(
+                "UNO games can only be started in the designated gaming channel!",
+            )
+            .setColor(0xff0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    // Check if there's already an active game in this channel
+    for (const [gameId, game] of activeUnoGames) {
+        if (game.channelId === targetChannel.id) {
+            const embed = new EmbedBuilder()
+                .setTitle("❌ Game Already Active")
+                .setDescription(
+                    "There's already an UNO game running in this channel!",
+                )
+                .setColor(0xff0000);
+            return await interaction.reply({
+                embeds: [embed],
+                ephemeral: true,
+            });
+        }
+    }
+
+    // Show betting modal
+    const modal = new ModalBuilder()
+        .setCustomId(`uno_bet_modal_${targetChannel.id}`)
+        .setTitle("🎰 UNO Diamond Betting Setup");
+
+    const betInput = new TextInputBuilder()
+        .setCustomId("bet_amount")
+        .setLabel("Diamond Bet Amount (10-1000 per player)")
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder("Enter diamonds each player must bet...")
+        .setRequired(true)
+        .setMaxLength(4);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(betInput));
+    await interaction.showModal(modal);
+}
+
 async function handleCleanupOldMessages(interaction) {
     if (!hasAdminRole(interaction)) {
         const embed = new EmbedBuilder()
@@ -2338,36 +3265,45 @@ async function handleCleanupOldMessages(interaction) {
     }
 
     await interaction.reply({
-        content: "🧹 Starting enhanced cleanup of old messages and user interactions...",
+        content:
+            "🧹 Starting enhanced cleanup of old messages and user interactions...",
         ephemeral: true,
     });
 
     try {
-        console.log("🧹 Manual cleanup initiated by admin:", interaction.user.tag);
-        
+        console.log(
+            "🧹 Manual cleanup initiated by admin:",
+            interaction.user.tag,
+        );
+
         // Clean up data first
         pointsSystem.cleanupExpiredGiftCards();
-        
+
         // Clean up old gift cards
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
         let cleanedCards = 0;
-        
-        for (const [code, card] of Object.entries(pointsSystem.data.generated_gift_cards)) {
+
+        for (const [code, card] of Object.entries(
+            pointsSystem.data.generated_gift_cards,
+        )) {
             const cardDate = new Date(card.created_at);
-            if (cardDate < oneDayAgo && (card.status === "void" || card.status === "claimed")) {
+            if (
+                cardDate < oneDayAgo &&
+                (card.status === "void" || card.status === "claimed")
+            ) {
                 delete pointsSystem.data.generated_gift_cards[code];
                 cleanedCards++;
             }
         }
-        
+
         if (cleanedCards > 0) {
             await pointsSystem.saveData();
         }
-        
+
         // Clean up old tickets
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
         let cleanedTickets = 0;
-        
+
         for (const [ticketId, ticket] of Object.entries(pointDropTickets)) {
             const ticketDate = new Date(ticket.createdAt);
             if (ticketDate < sevenDaysAgo) {
@@ -2375,35 +3311,36 @@ async function handleCleanupOldMessages(interaction) {
                 cleanedTickets++;
             }
         }
-        
+
         // Perform enhanced channel cleanup
         await performEnhancedChannelCleanup();
-        
+
         const embed = new EmbedBuilder()
             .setTitle("🧹 Cleanup Completed!")
             .setDescription(
                 `**Enhanced cleanup results:**\n\n` +
-                `💾 **Data Cleanup:**\n` +
-                `• ${cleanedCards} old gift cards removed\n` +
-                `• ${cleanedTickets} old tickets removed\n` +
-                `• Expired gift cards updated\n\n` +
-                `📨 **Message Cleanup:**\n` +
-                `• All bot messages removed\n` +
-                `• Old user interactions cleaned\n` +
-                `• Casino results cleared\n` +
-                `• Old mining events removed\n\n` +
-                `✅ **All channels are now clean and fresh!**`
+                    `💾 **Data Cleanup:**\n` +
+                    `• ${cleanedCards} old gift cards removed\n` +
+                    `• ${cleanedTickets} old tickets removed\n` +
+                    `• Expired gift cards updated\n\n` +
+                    `📨 **Message Cleanup:**\n` +
+                    `• All bot messages removed\n` +
+                    `• Old user interactions cleaned\n` +
+                    `• Casino results cleared\n` +
+                    `• Old mining events removed\n\n` +
+                    `✅ **All channels are now clean and fresh!**`,
             )
             .setColor(0x00ff00)
             .setTimestamp();
-            
+
         await interaction.followUp({ embeds: [embed], ephemeral: true });
-        
     } catch (error) {
         console.error("Error during manual cleanup:", error);
         const errorEmbed = new EmbedBuilder()
             .setTitle("❌ Cleanup Error")
-            .setDescription("An error occurred during cleanup. Check console for details.")
+            .setDescription(
+                "An error occurred during cleanup. Check console for details.",
+            )
             .setColor(0xff0000);
         await interaction.followUp({ embeds: [errorEmbed], ephemeral: true });
     }
@@ -2535,25 +3472,37 @@ function createPointDropTicketButtons() {
 
 async function showPointDropTicketModal(interaction) {
     // Restrict to specific admin user IDs only
-    const allowedUserIDs = ["879396413010743337", "959692217885294632", "1054207830292447324"];
-    
+    const allowedUserIDs = [
+        "879396413010743337",
+        "959692217885294632",
+        "1054207830292447324",
+    ];
+
     if (!allowedUserIDs.includes(interaction.user.id)) {
         const embed = new EmbedBuilder()
             .setTitle("❌ Access Denied")
-            .setDescription("You don't have permission to create point drop tickets.")
+            .setDescription(
+                "You don't have permission to create point drop tickets.",
+            )
             .setColor(0xff0000);
-        
-        const reply = await interaction.reply({ embeds: [embed], ephemeral: true });
-        
+
+        const reply = await interaction.reply({
+            embeds: [embed],
+            ephemeral: true,
+        });
+
         // Auto-delete response after 1 minute
         setTimeout(async () => {
             try {
                 await reply.delete();
             } catch (error) {
-                console.log("Could not delete access denied message:", error.message);
+                console.log(
+                    "Could not delete access denied message:",
+                    error.message,
+                );
             }
         }, 60 * 1000); // 1 minute
-        
+
         return;
     }
 
@@ -2712,14 +3661,20 @@ async function handlePointDropTicketSubmission(interaction) {
         .setColor(0x00ff00)
         .setTimestamp();
 
-    const reply = await interaction.reply({ embeds: [confirmEmbed], ephemeral: true });
-    
+    const reply = await interaction.reply({
+        embeds: [confirmEmbed],
+        ephemeral: true,
+    });
+
     // Auto-delete response after 1 minute
     setTimeout(async () => {
         try {
             await reply.delete();
         } catch (error) {
-            console.log("Could not delete ticket submission confirmation:", error.message);
+            console.log(
+                "Could not delete ticket submission confirmation:",
+                error.message,
+            );
         }
     }, 60 * 1000); // 1 minute
 }
@@ -3099,7 +4054,7 @@ async function showPointDropGuidelines(interaction) {
         });
 
     const reply = await interaction.reply({ embeds: [embed], ephemeral: true });
-    
+
     // Auto-delete response after 1 minute
     setTimeout(async () => {
         try {
@@ -3109,10 +4064,6 @@ async function showPointDropGuidelines(interaction) {
         }
     }, 60 * 1000); // 1 minute
 }
-
-
-
-
 
 async function showPointDropHistory(interaction) {
     const userTickets = Object.values(pointDropTickets).filter(
@@ -3126,18 +4077,24 @@ async function showPointDropHistory(interaction) {
                 "You haven't submitted any point drop tickets yet!\n\nClick **Create Point Drop Ticket** to submit your first request.",
             )
             .setColor(0x0099ff);
-        
-        const reply = await interaction.reply({ embeds: [embed], ephemeral: true });
-        
+
+        const reply = await interaction.reply({
+            embeds: [embed],
+            ephemeral: true,
+        });
+
         // Auto-delete response after 1 minute
         setTimeout(async () => {
             try {
                 await reply.delete();
             } catch (error) {
-                console.log("Could not delete empty history message:", error.message);
+                console.log(
+                    "Could not delete empty history message:",
+                    error.message,
+                );
             }
         }, 60 * 1000); // 1 minute
-        
+
         return;
     }
 
@@ -3174,7 +4131,7 @@ async function showPointDropHistory(interaction) {
     }
 
     const reply = await interaction.reply({ embeds: [embed], ephemeral: true });
-    
+
     // Auto-delete response after 1 minute
     setTimeout(async () => {
         try {
@@ -3183,6 +4140,260 @@ async function showPointDropHistory(interaction) {
             console.log("Could not delete history message:", error.message);
         }
     }, 60 * 1000); // 1 minute
+}
+
+async function handleUnoPlay(interaction, gameId) {
+    const game = activeUnoGames.get(gameId);
+    if (!game) {
+        return await interaction.reply({
+            content: "❌ This game no longer exists!",
+            ephemeral: true,
+        });
+    }
+
+    if (game.getCurrentPlayer() !== interaction.user.id) {
+        return await interaction.reply({
+            content: "❌ It's not your turn!",
+            ephemeral: true,
+        });
+    }
+
+    const playerHand = game.hands.get(interaction.user.id);
+    const topCard = game.discardPile[game.discardPile.length - 1];
+    const playableCards = playerHand.filter((card) =>
+        game.canPlayCard(card, topCard),
+    );
+
+    if (playableCards.length === 0) {
+        return await interaction.reply({
+            content: "❌ You have no playable cards! Draw a card first.",
+            ephemeral: true,
+        });
+    }
+
+    // For simplicity, play the first playable card
+    const cardToPlay = playableCards[0];
+    const handIndex = playerHand.indexOf(cardToPlay);
+    playerHand.splice(handIndex, 1);
+    game.discardPile.push(cardToPlay);
+
+    // Reset auto-cleanup timer since there was activity
+    game.cancelAutoCleanup();
+
+    // Check for UNO
+    if (playerHand.length === 0) {
+        // Player wins!
+        game.finishPlayer(interaction.user.id);
+
+        let prizeText = "";
+        if (game.betAmount > 0) {
+            const prizes = game.calculatePrizeDistribution();
+            const userPrize = prizes[interaction.user.id] || 0;
+
+            if (userPrize > 0) {
+                const userData = pointsSystem.getUserData(interaction.user.id);
+                userData.points += userPrize;
+                userData.total_earned += userPrize;
+                await pointsSystem.saveData();
+
+                prizeText = `\n\n💎 **Prize Won:** ${userPrize} 💎\n🏆 **Prize Pool:** ${game.totalPrizePool} 💎`;
+            }
+        }
+
+        const topCard = game.discardPile[game.discardPile.length - 1];
+        const cardEmbed = topCard.image
+            ? {
+                  image: { url: topCard.image },
+              }
+            : null;
+
+        const embed = new EmbedBuilder()
+            .setTitle("🏆 UNO SHOWDOWN WINNER!")
+            .setDescription(
+                `**${interaction.user.displayName} wins the game!**\n\n` +
+                    `🎉 **CONGRATULATIONS!** 🎉\n` +
+                    `🃏 **Winning Card:** ${cardToPlay.emoji}${prizeText}\n\n` +
+                    `**Game Summary:**\n` +
+                    `• Players: ${game.players.length}\n` +
+                    `• Bet Amount: ${game.betAmount} 💎 per player\n` +
+                    `• Total Prize Pool: ${game.totalPrizePool} 💎\n` +
+                    `• Winner's Prize: ${Math.floor(game.totalPrizePool * 0.5)} 💎`,
+            )
+            .setColor(0xffd700)
+            .setTimestamp();
+
+        if (cardEmbed) {
+            embed.setImage(cardToPlay.image);
+        }
+
+        await interaction.update({ embeds: [embed], components: [] });
+
+        // Distribute remaining prizes if there are other finished players
+        if (game.finishedPlayers.length > 1) {
+            const allPrizes = game.calculatePrizeDistribution();
+            for (const [playerId, prize] of Object.entries(allPrizes)) {
+                if (playerId !== interaction.user.id && prize > 0) {
+                    const userData = pointsSystem.getUserData(playerId);
+                    userData.points += prize;
+                    userData.total_earned += prize;
+                }
+            }
+            await pointsSystem.saveData();
+        }
+
+        activeUnoGames.delete(gameId);
+        return;
+    }
+
+    game.nextTurn();
+    const nextPlayer = await client.users.fetch(game.getCurrentPlayer());
+
+    const embed = new EmbedBuilder()
+        .setTitle("🃏 UNO Showdown 3D")
+        .setDescription(
+            `**${interaction.user.displayName} played:** ${cardToPlay.emoji}\n\n` +
+                `**Current Player:** ${nextPlayer.displayName}\n` +
+                `**Top Card:** ${cardToPlay.emoji}\n` +
+                `**Direction:** ${game.direction === 1 ? "➡️ Clockwise" : "⬅️ Counter-clockwise"}\n\n` +
+                `**Players:**\n` +
+                (
+                    await Promise.all(
+                        game.players.map(async (id, index) => {
+                            const user = await client.users.fetch(id);
+                            const cards = game.hands.get(id).length;
+                            const indicator =
+                                index === game.currentPlayerIndex ? "👉" : "  ";
+                            return `${indicator} ${user.displayName}: ${cards} cards`;
+                        }),
+                    )
+                ).join("\n") +
+                `\n\n⚠️ **Auto-cleanup in 10 seconds if no activity!**`,
+        )
+        .setColor(0x00ff00)
+        .setTimestamp();
+
+    const components = createUnoGameButtons(game.gameId);
+    await interaction.update({ embeds: [embed], components: [components] });
+
+    // Restart auto-cleanup timer
+    game.startAutoCleanup(interaction.message);
+}
+
+async function handleUnoDraw(interaction, gameId) {
+    const game = activeUnoGames.get(gameId);
+    if (!game) {
+        return await interaction.reply({
+            content: "❌ This game no longer exists!",
+            ephemeral: true,
+        });
+    }
+
+    if (game.getCurrentPlayer() !== interaction.user.id) {
+        return await interaction.reply({
+            content: "❌ It's not your turn!",
+            ephemeral: true,
+        });
+    }
+
+    if (game.deck.length === 0) {
+        return await interaction.reply({
+            content: "❌ No more cards in deck!",
+            ephemeral: true,
+        });
+    }
+
+    const drawnCard = game.deck.pop();
+    game.hands.get(interaction.user.id).push(drawnCard);
+
+    // Reset auto-cleanup timer
+    game.cancelAutoCleanup();
+    game.nextTurn();
+
+    const nextPlayer = await client.users.fetch(game.getCurrentPlayer());
+    const topCard = game.discardPile[game.discardPile.length - 1];
+
+    const embed = new EmbedBuilder()
+        .setTitle("🃏 UNO Showdown 3D")
+        .setDescription(
+            `**${interaction.user.displayName} drew a card**\n\n` +
+                `**Current Player:** ${nextPlayer.displayName}\n` +
+                `**Top Card:** ${topCard.emoji}\n` +
+                `**Direction:** ${game.direction === 1 ? "➡️ Clockwise" : "⬅️ Counter-clockwise"}\n\n` +
+                `**Players:**\n` +
+                (
+                    await Promise.all(
+                        game.players.map(async (id, index) => {
+                            const user = await client.users.fetch(id);
+                            const cards = game.hands.get(id).length;
+                            const indicator =
+                                index === game.currentPlayerIndex ? "👉" : "  ";
+                            return `${indicator} ${user.displayName}: ${cards} cards`;
+                        }),
+                    )
+                ).join("\n") +
+                `\n\n⚠️ **Auto-cleanup in 10 seconds if no activity!**`,
+        )
+        .setColor(0x0099ff)
+        .setTimestamp();
+
+    const components = createUnoGameButtons(game.gameId);
+    await interaction.update({ embeds: [embed], components: [components] });
+
+    // Restart auto-cleanup timer
+    game.startAutoCleanup(interaction.message);
+}
+
+async function handleUnoCall(interaction, gameId) {
+    const game = activeUnoGames.get(gameId);
+    if (!game) {
+        return await interaction.reply({
+            content: "❌ This game no longer exists!",
+            ephemeral: true,
+        });
+    }
+
+    const playerHand = game.hands.get(interaction.user.id);
+    if (playerHand.length !== 1) {
+        return await interaction.reply({
+            content: "❌ You can only call UNO when you have exactly 1 card!",
+            ephemeral: true,
+        });
+    }
+
+    await interaction.reply({
+        content: `🗣️ **${interaction.user.displayName} called UNO!** (1 card remaining)`,
+        ephemeral: false,
+    });
+}
+
+async function handleUnoBetModal(interaction) {
+    const channelId = interaction.customId.replace("uno_bet_modal_", "");
+    const betAmount = parseInt(
+        interaction.fields.getTextInputValue("bet_amount"),
+    );
+
+    if (isNaN(betAmount) || betAmount < 10 || betAmount > 1000) {
+        return await interaction.reply({
+            content: "❌ Bet amount must be between 10 and 1000 diamonds!",
+            ephemeral: true,
+        });
+    }
+
+    // Check if user has enough diamonds
+    const userData = pointsSystem.getUserData(interaction.user.id);
+    if (userData.points < betAmount) {
+        return await interaction.reply({
+            content: `❌ You need ${betAmount} 💎 but only have ${userData.points} 💎!`,
+            ephemeral: true,
+        });
+    }
+
+    await interaction.reply({
+        content: `🎮 Creating UNO game with ${betAmount} 💎 bet per player...`,
+        ephemeral: true,
+    });
+
+    await startUnoGame(channelId, interaction.user.id, betAmount);
 }
 
 async function handleDiamondMining(interaction, eventId) {
@@ -3238,6 +4449,190 @@ async function sendPointDropTicketPanel() {
     }
 }
 
+async function handleSendSystemPanel(interaction) {
+    if (!hasAdminRole(interaction)) {
+        const embed = new EmbedBuilder()
+            .setTitle("❌ Access Denied")
+            .setDescription("You need the admin role to use this command.")
+            .setColor(0xff0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    await sendSystemCommandsPanel();
+    await interaction.reply({
+        content: "✅ System commands panel sent!",
+        ephemeral: true,
+    });
+}
+
+async function sendSystemCommandsPanel() {
+    const systemChannel =
+        client.channels.cache.get(CHANNELS.system_commands) ||
+        client.channels.cache.get(CHANNELS.information);
+
+    if (systemChannel) {
+        const embed = new EmbedBuilder()
+            .setTitle("🎛️ Complete System Commands Reference")
+            .setDescription(
+                `**🤖 PCRP Diamond Points Bot - Full Command Database**\n\`\`\`\n` +
+                    `     🎛️ SYSTEM PANEL 🎛️\n` +
+                    `  ╔══════════════════════════╗\n` +
+                    `  ║ 📖 ALL COMMANDS         ║\n` +
+                    `  ║ 🎮 UNO AI SYSTEM        ║\n` +
+                    `  ║ 💎 DIAMOND ECONOMY      ║\n` +
+                    `  ║ 🛡️ ADMIN CONTROLS       ║\n` +
+                    `  ╚══════════════════════════╝\n` +
+                    `\`\`\`\n\n` +
+                    `**🎯 Quick Navigation:**\n` +
+                    `📍 **Channels:** <#${CHANNELS.daily_claims}> | <#${CHANNELS.gambling}> | <#${CHANNELS.gift_cards}>\n` +
+                    `📍 **Systems:** <#${CHANNELS.point_drops}> | <#${CHANNELS.leaderboard}> | <#${CHANNELS.transfers}>\n\n` +
+                    `**📋 Complete Commands List Below:**`,
+            )
+            .setColor(0x9932cc)
+            .setTimestamp();
+
+        // User Commands Section
+        embed.addFields(
+            {
+                name: "💎 **Daily & Points Commands**",
+                value:
+                    `\`/claim_daily\` - Claim daily diamonds with streak bonus\n` +
+                    `\`/get_points [user]\` - Check your or another user's balance\n` +
+                    `\`/transfer_points <user> <amount>\` - Send diamonds to others\n` +
+                    `📍 **Location:** <#${CHANNELS.daily_claims}> | <#${CHANNELS.transfers}>`,
+                inline: false,
+            },
+            {
+                name: "🎲 **Gaming & Casino Commands**",
+                value:
+                    `\`/gambling_menu\` - Access 3D casino games menu\n` +
+                    `• **🎲 Dice Game** - Guess 1-6 (5x multiplier, min 10💎)\n` +
+                    `• **🪙 Coinflip** - Pick heads/tails (2x multiplier, min 10💎)\n` +
+                    `• **🎰 Slots** - Auto-spin reels (12x max, fixed 30💎)\n` +
+                    `📍 **Location:** <#${CHANNELS.gambling}>`,
+                inline: false,
+            },
+            {
+                name: "🃏 **UNO Showdown 3D Commands**",
+                value:
+                    `\`/uno [channel]\` - Start UNO game with diamond betting\n` +
+                    `🤖 **AI Features:** 4 difficulty levels (Easy/Medium/Hard/Expert)\n` +
+                    `💎 **Betting System:** 10-1000 diamonds per player\n` +
+                    `🏆 **Prize Distribution:** 50%/30%/20% for top 3 players\n` +
+                    `📍 **Location:** Channel ID 1387168027027574875 only`,
+                inline: false,
+            },
+            {
+                name: "🎁 **Gift Card System Commands**",
+                value:
+                    `\`/generate_gift_card <amount>\` - Create gift cards (500-100k💎)\n` +
+                    `\`/check_gift_card <code>\` - Verify gift card status\n` +
+                    `\`/redeem_gift_card\` - Legacy PCRP system conversion\n` +
+                    `\`/convert_points\` - Same as redeem_gift_card\n` +
+                    `📍 **Location:** <#${CHANNELS.gift_cards}> | <#${CHANNELS.gift_card_verification}>`,
+                inline: false,
+            },
+            {
+                name: "🏆 **Information & Leaderboard Commands**",
+                value:
+                    `\`/leaderboard\` - View top 10 diamond holders\n` +
+                    `\`/info\` - Show comprehensive bot information\n` +
+                    `\`/test_dm\` - Test bot's DM capability for rewards\n` +
+                    `📍 **Location:** <#${CHANNELS.leaderboard}> | <#${CHANNELS.information}>`,
+                inline: false,
+            },
+            {
+                name: "🎯 **Point Drop System Commands**",
+                value:
+                    `**User Commands (Restricted Access):**\n` +
+                    `• Create Point Drop Tickets (100-10k💎, 1-60min duration)\n` +
+                    `• View ticket guidelines and history\n` +
+                    `**Admin Commands:**\n` +
+                    `\`/approve_point_drop <ticket_id>\` - Approve tickets\n` +
+                    `\`/reject_point_drop <ticket_id>\` - Reject tickets\n` +
+                    `📍 **Location:** <#${CHANNELS.point_drops}>`,
+                inline: false,
+            },
+        );
+
+        // Admin Commands Section
+        embed.addFields(
+            {
+                name: "🛡️ **Admin Panel Management Commands**",
+                value:
+                    `\`/send_daily_claim\` - Deploy daily claim panel\n` +
+                    `\`/send_gift_card_panel\` - Deploy gift card panel\n` +
+                    `\`/send_info_panel\` - Deploy information panel\n` +
+                    `\`/send_point_drop_panel\` - Deploy point drop panel\n` +
+                    `\`/send_system_panel\` - Deploy this system panel\n` +
+                    `🔒 **Access:** Admin role required`,
+                inline: false,
+            },
+            {
+                name: "🧹 **System Maintenance Commands**",
+                value:
+                    `\`/cleanup_old_messages\` - Clean all old messages/interactions\n` +
+                    `• Removes expired gift cards from database\n` +
+                    `• Cleans old point drop tickets (7+ days)\n` +
+                    `• Bulk deletes bot messages and user interactions\n` +
+                    `• Enhanced cleanup for fresh channel state\n` +
+                    `🔒 **Access:** Admin role required`,
+                inline: false,
+            },
+        );
+
+        // System Information Section
+        embed.addFields(
+            {
+                name: "⚙️ **Bot System Information**",
+                value:
+                    `**Economy Settings:**\n` +
+                    `• Daily Base Reward: 50💎 (up to 3x streak multiplier)\n` +
+                    `• Gift Card Range: 500-100,000💎 (7-day validity)\n` +
+                    `• Conversion Rate: 100💎 = 1 Rupee\n` +
+                    `• Casino Min Bets: 10💎 (Dice/Coinflip), 30💎 (Slots)\n\n` +
+                    `**Auto-Systems:**\n` +
+                    `• Auto-save every 5 minutes\n` +
+                    `• Hourly cleanup of expired data\n` +
+                    `• Auto-delete casino results (3min)\n` +
+                    `• Auto-delete gift card results (5min)`,
+                inline: false,
+            },
+            {
+                name: "🤖 **UNO AI System Details**",
+                value:
+                    `**AI Difficulty Levels:**\n` +
+                    `• 🎲 **EASY:** 70% play rate, simple strategy\n` +
+                    `• 🎯 **MEDIUM:** 85% play rate, prefers action cards\n` +
+                    `• 🎮 **HARD:** 90% play rate, strategic card choice\n` +
+                    `• 🤖 **EXPERT:** 95% play rate, optimal AI strategy\n\n` +
+                    `**Features:**\n` +
+                    `• Auto-cleanup in 10 seconds if inactive\n` +
+                    `• Diamond betting system (10-1000💎)\n` +
+                    `• Prize distribution for top 3 finishers\n` +
+                    `• Support for 2-10 players (human + AI)`,
+                inline: false,
+            },
+            {
+                name: "📊 **Channel Layout & Permissions**",
+                value:
+                    `**Public Channels:**\n` +
+                    `💎 Daily Claims | 🎲 Gambling | 🎁 Gift Cards\n` +
+                    `🏆 Leaderboard | 📊 Transfers | ℹ️ Information\n\n` +
+                    `**Restricted Channels:**\n` +
+                    `🎯 Point Drops (User IDs: 879396413010743337, 959692217885294632, 1054207830292447324)\n` +
+                    `🛡️ Admin Panel (Admin role required)\n` +
+                    `🃏 UNO Gaming (Channel ID: 1387168027027574875)\n\n` +
+                    `**Bot Token:** MTM4NjM2MzcyNjM0MDQyMzgyMQ.Gp3OsC.BECnvKXhPYRztgeRdntR_gjiJK7-lyjjDhpkfI`,
+                inline: false,
+            },
+        );
+
+        await systemChannel.send({ embeds: [embed] });
+        console.log("✅ System commands panel sent");
+    }
+}
+
 // Startup functions
 async function sendStartupPanels() {
     console.log("🚀 Bot startup sequence initiated...");
@@ -3252,6 +4647,7 @@ async function sendStartupPanels() {
     await sendInfoPanel();
     await sendAdminGiftCardPanel();
     await sendPointDropTicketPanel();
+    await sendSystemCommandsPanel();
 
     console.log(
         "✅ Bot startup sequence completed - All systems fresh and operational!",
@@ -3456,6 +4852,7 @@ async function performEnhancedChannelCleanup() {
         CHANNELS.information,
         CHANNELS.gift_card_verification,
         CHANNELS.point_drops,
+        CHANNELS.system_commands,
     ];
 
     for (const channelId of channels) {
@@ -3477,43 +4874,67 @@ async function performEnhancedChannelCleanup() {
                     }
 
                     const fetched = await channel.messages.fetch(fetchOptions);
-                    
+
                     if (fetched.size === 0) break;
 
                     // Filter messages to delete: bot messages + user interaction responses + old casino results
                     const messagesToDelete = fetched.filter((msg) => {
                         const messageAge = Date.now() - msg.createdTimestamp;
                         const isOld = messageAge > 14 * 24 * 60 * 60 * 1000; // Older than 14 days
-                        
+
                         // Always delete bot messages
                         if (msg.author.id === client.user.id) {
                             return true;
                         }
-                        
+
                         // Delete user messages that contain bot interaction patterns
                         if (msg.author.bot === false) {
                             const content = msg.content.toLowerCase();
                             const hasEmbeds = msg.embeds.length > 0;
                             const hasComponents = msg.components.length > 0;
-                            
+
                             // Check for bot interaction indicators
                             const botPatterns = [
-                                '💎', 'diamonds', 'claimed', 'gift card', 'casino', 
-                                'mining', 'leaderboard', 'streak', 'coinflip', 'dice',
-                                'slots', 'won', 'lost', 'jackpot', 'balance', 'points',
-                                '🎲', '🪙', '🎰', '🎁', '🏆', '⛏️', '🔥'
+                                "💎",
+                                "diamonds",
+                                "claimed",
+                                "gift card",
+                                "casino",
+                                "mining",
+                                "leaderboard",
+                                "streak",
+                                "coinflip",
+                                "dice",
+                                "slots",
+                                "won",
+                                "lost",
+                                "jackpot",
+                                "balance",
+                                "points",
+                                "🎲",
+                                "🪙",
+                                "🎰",
+                                "🎁",
+                                "🏆",
+                                "⛏️",
+                                "🔥",
                             ];
-                            
-                            const hasBotPattern = botPatterns.some(pattern => 
-                                content.includes(pattern)
+
+                            const hasBotPattern = botPatterns.some((pattern) =>
+                                content.includes(pattern),
                             );
-                            
+
                             // Delete if has bot patterns, embeds, components, or is old user interaction
-                            if (hasBotPattern || hasEmbeds || hasComponents || isOld) {
+                            if (
+                                hasBotPattern ||
+                                hasEmbeds ||
+                                hasComponents ||
+                                isOld
+                            ) {
                                 return true;
                             }
                         }
-                        
+
                         return false;
                     });
 
@@ -3521,9 +4942,10 @@ async function performEnhancedChannelCleanup() {
                         // Group messages by age for bulk delete (Discord only allows bulk delete for messages < 14 days)
                         const recentMessages = [];
                         const oldMessages = [];
-                        
-                        messagesToDelete.forEach(msg => {
-                            const messageAge = Date.now() - msg.createdTimestamp;
+
+                        messagesToDelete.forEach((msg) => {
+                            const messageAge =
+                                Date.now() - msg.createdTimestamp;
                             if (messageAge < 14 * 24 * 60 * 60 * 1000) {
                                 recentMessages.push(msg);
                             } else {
@@ -3534,14 +4956,20 @@ async function performEnhancedChannelCleanup() {
                         // Bulk delete recent messages
                         if (recentMessages.length > 1) {
                             // Split into chunks of 100 for bulk delete
-                            for (let i = 0; i < recentMessages.length; i += 100) {
+                            for (
+                                let i = 0;
+                                i < recentMessages.length;
+                                i += 100
+                            ) {
                                 const chunk = recentMessages.slice(i, i + 100);
                                 if (chunk.length > 1) {
                                     await channel.bulkDelete(chunk);
                                 } else if (chunk.length === 1) {
                                     await chunk[0].delete().catch(() => {});
                                 }
-                                await new Promise(resolve => setTimeout(resolve, 1000)); // Rate limit protection
+                                await new Promise((resolve) =>
+                                    setTimeout(resolve, 1000),
+                                ); // Rate limit protection
                             }
                         } else if (recentMessages.length === 1) {
                             await recentMessages[0].delete().catch(() => {});
@@ -3551,7 +4979,9 @@ async function performEnhancedChannelCleanup() {
                         for (const msg of oldMessages) {
                             try {
                                 await msg.delete();
-                                await new Promise(resolve => setTimeout(resolve, 500)); // Rate limit protection
+                                await new Promise((resolve) =>
+                                    setTimeout(resolve, 500),
+                                ); // Rate limit protection
                             } catch (error) {
                                 // Ignore delete errors for old messages
                             }
@@ -3562,12 +4992,12 @@ async function performEnhancedChannelCleanup() {
 
                     // Set lastMessageId for next iteration
                     lastMessageId = fetched.last()?.id;
-                    
+
                     // Break if we didn't fetch a full batch
                     if (fetched.size < 100) break;
-                    
+
                     // Small delay to avoid rate limits
-                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    await new Promise((resolve) => setTimeout(resolve, 1000));
                 }
 
                 if (totalCleanedMessages > 0) {
@@ -3588,12 +5018,14 @@ async function performEnhancedChannelCleanup() {
         }
     }
 
-    console.log("✅ Enhanced channel cleanup completed - All old interactions removed!");
+    console.log(
+        "✅ Enhanced channel cleanup completed - All old interactions removed!",
+    );
 }
 
 // With this (hardcoded, as requested):
 client.login(
-    "",
+    "MTM4NjM2MzcyNjM0MDQyMzgyMQ.Gp3OsC.BECnvKXhPYRztgeRdntR_gjiJK7-lyjjDhpkfI",
 );
 //
 // Recommended secure approach (using environment variable):
