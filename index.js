@@ -684,9 +684,7 @@ async function handleButtonInteraction(interaction) {
             case "point_drop_guidelines":
                 await showPointDropGuidelines(interaction);
                 break;
-            case "check_ticket_status":
-                await showTicketStatusModal(interaction);
-                break;
+            
             case "point_drop_history":
                 await showPointDropHistory(interaction);
                 break;
@@ -724,8 +722,7 @@ async function handleModalSubmit(interaction) {
             await handleAdminGiftCardGeneration(interaction);
         } else if (customId === "point_drop_ticket_modal") {
             await handlePointDropTicketSubmission(interaction);
-        } else if (customId === "ticket_status_modal") {
-            await handleTicketStatusCheck(interaction);
+        
         }
     } catch (error) {
         console.error("Error handling modal submit:", error);
@@ -2527,21 +2524,13 @@ function createPointDropTicketButtons() {
             .setStyle(ButtonStyle.Secondary)
             .setEmoji("📖"),
         new ButtonBuilder()
-            .setCustomId("check_ticket_status")
-            .setLabel("🔍 Check Ticket Status")
-            .setStyle(ButtonStyle.Success)
-            .setEmoji("📊"),
-    );
-
-    const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
             .setCustomId("point_drop_history")
             .setLabel("📋 My Drop History")
             .setStyle(ButtonStyle.Secondary)
             .setEmoji("📚"),
     );
 
-    return [row1, row2];
+    return [row1];
 }
 
 async function showPointDropTicketModal(interaction) {
@@ -3080,94 +3069,9 @@ async function showPointDropGuidelines(interaction) {
     await interaction.reply({ embeds: [embed], ephemeral: true });
 }
 
-async function showTicketStatusModal(interaction) {
-    const modal = new ModalBuilder()
-        .setCustomId("ticket_status_modal")
-        .setTitle("🔍 Check Ticket Status");
 
-    const ticketInput = new TextInputBuilder()
-        .setCustomId("ticket_id")
-        .setLabel("Ticket ID")
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder("Enter your ticket ID (e.g., PD-ABCD1234)")
-        .setRequired(true)
-        .setMaxLength(12);
 
-    modal.addComponents(new ActionRowBuilder().addComponents(ticketInput));
-    await interaction.showModal(modal);
-}
 
-async function handleTicketStatusCheck(interaction) {
-    const ticketId = interaction.fields
-        .getTextInputValue("ticket_id")
-        .toUpperCase();
-    const ticket = pointDropTickets[ticketId];
-
-    if (!ticket) {
-        const embed = new EmbedBuilder()
-            .setTitle("❌ Ticket Not Found")
-            .setDescription(
-                `**Ticket ID:** \`${ticketId}\`\n\nThis ticket ID doesn't exist in our system.`,
-            )
-            .setColor(0xff0000);
-        return await interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-
-    let statusEmoji, statusColor;
-    switch (ticket.status) {
-        case "pending":
-            statusEmoji = "🟡";
-            statusColor = 0xffaa00;
-            break;
-        case "approved":
-            statusEmoji = "✅";
-            statusColor = 0x00ff00;
-            break;
-        case "rejected":
-            statusEmoji = "❌";
-            statusColor = 0xff0000;
-            break;
-        default:
-            statusEmoji = "❓";
-            statusColor = 0x808080;
-    }
-
-    const embed = new EmbedBuilder()
-        .setTitle("🔍 Ticket Status Check")
-        .setDescription(
-            `**Ticket ID:** \`${ticketId}\`\n**Status:** ${statusEmoji} ${ticket.status.charAt(0).toUpperCase() + ticket.status.slice(1)}`,
-        )
-        .addFields(
-            { name: "🎯 Event Title", value: ticket.title, inline: false },
-            {
-                name: "💎 Diamond Amount",
-                value: `${ticket.diamondAmount.toLocaleString()} 💎`,
-                inline: true,
-            },
-            {
-                name: "⏱️ Duration",
-                value: `${ticket.duration} minutes`,
-                inline: true,
-            },
-            {
-                name: "📅 Submitted",
-                value: `<t:${Math.floor(new Date(ticket.createdAt).getTime() / 1000)}:F>`,
-                inline: false,
-            },
-        )
-        .setColor(statusColor)
-        .setTimestamp();
-
-    if (ticket.reviewedAt) {
-        embed.addFields({
-            name: "👥 Reviewed",
-            value: `<t:${Math.floor(new Date(ticket.reviewedAt).getTime() / 1000)}:F>`,
-            inline: true,
-        });
-    }
-
-    await interaction.reply({ embeds: [embed], ephemeral: true });
-}
 
 async function showPointDropHistory(interaction) {
     const userTickets = Object.values(pointDropTickets).filter(
@@ -3253,9 +3157,6 @@ async function handleDiamondMining(interaction, eventId) {
     miningData.totalClaims++;
     miningData.remainingDiamonds -= miningData.diamondReward;
 
-    // Update top 10 miners list (assuming a function or structure exists to handle this)
-    await updateTopMinersList(userId, userClaims, miningData);
-
     await pointsSystem.saveData();
 }
 
@@ -3265,7 +3166,7 @@ async function sendPointDropTicketPanel() {
         const embed = new EmbedBuilder()
             .setTitle("🎯 Point Drop Ticket System")
             .setDescription(
-                `**Request Community Point Drop Events!**\n\`\`\`\n  🎯 POINT DROP SYSTEM 🎯\n╔═══════════════════════════╗\n║ 🎫 Create Event Tickets   ║\n║ 📋 View Guidelines        ║\n║ 🔍 Check Status          ║\n║ 📚 View History          ║\n╚═══════════════════════════╝\n\`\`\`\n\n**How it Works:**\n1. 🎫 **Create Ticket** - Submit your point drop event request\n2. 📋 **Follow Guidelines** - Check requirements for approval\n3. ⏳ **Wait for Review** - Admin team reviews your request\n4. 🎉 **Event Scheduled** - Approved events get scheduled\n\n**Request Requirements:**\n💎 **Diamond Range:** 100 - 10,000 diamonds\n⏱️ **Duration:** 1 - 60 minutes\n📝 **Details:** Title, description, and reason required\n\n**Review Process:**\n• All requests reviewed by admin team\n• Approval based on community benefit\n• Notifications sent via DM\n• Approved events scheduled by admins\n\n**Tips for Approval:**\n✅ Special occasions (holidays, milestones)\n✅ Community engagement events\n✅ Reasonable diamond amounts\n✅ Clear event descriptions\n✅ Valid reasons for request\n\nStart by clicking **Create Point Drop Ticket** below!`,
+                `**Request Community Point Drop Events!**\n\`\`\`\n  🎯 POINT DROP SYSTEM 🎯\n╔═══════════════════════════╗\n║ 🎫 Create Event Tickets   ║\n║ 📋 View Guidelines        ║\n║ 📚 View History          ║\n╚═══════════════════════════╝\n\`\`\`\n\n**How it Works:**\n1. 🎫 **Create Ticket** - Submit your point drop event request\n2. 📋 **Follow Guidelines** - Check requirements for approval\n3. ⏳ **Wait for Review** - Admin team reviews your request\n4. 🎉 **Event Scheduled** - Approved events get scheduled\n\n**Request Requirements:**\n💎 **Diamond Range:** 100 - 10,000 diamonds\n⏱️ **Duration:** 1 - 60 minutes\n📝 **Details:** Title, description, and reason required\n\n**Review Process:**\n• All requests reviewed by admin team\n• Approval based on community benefit\n• Notifications sent via DM\n• Approved events scheduled by admins\n\n**Tips for Approval:**\n✅ Special occasions (holidays, milestones)\n✅ Community engagement events\n✅ Reasonable diamond amounts\n✅ Clear event descriptions\n✅ Valid reasons for request\n\nStart by clicking **Create Point Drop Ticket** below!`,
             )
             .setColor(0x00bfff);
 
