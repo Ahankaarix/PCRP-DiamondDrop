@@ -816,7 +816,11 @@ async function handleGiftCardSelection(interaction) {
             .setTitle('❌ Insufficient Diamonds')
             .setDescription(`You need ${card.cost} 💎 but only have ${userData.points} 💎`)
             .setColor(0xFF0000);
-        return await interaction.reply({ embeds: [embed],\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n```')
+        return await interaction.reply({ embeds: [embed],
+            ephemeral: true });
+    }
+
+    // Check if user\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n```')
         .setColor(0xFFD700);
 
     const medals = ['🥇', '🥈', '🥉'];
@@ -1120,7 +1124,7 @@ async function sendStartupPanels() {
         await dailyChannel.send({ embeds: [embed], components: [component] });
 
         // Send ping notification
-        await dailyChannel.send('🔔 **BOT RECONNECTED!** All your diamonds and streaks are safe! @everyone');
+        await dailyChannel.send('🔔 **BOT RECONNECTED!** All your diamonds and streaks are safe!');
         console.log('✅ Daily claim panel sent + ping notification');
     }
 
@@ -1129,4 +1133,48 @@ async function sendStartupPanels() {
     if (gamblingChannel) {
         const embed = new EmbedBuilder()
             .setTitle('🎰 Diamond Casino - Gambling Hub')
-            .setDescription('**Welcome Back to the Casino!**\n```\n🎲 ╔═══════════╗ 🪙\n  ║  CASINO   ║\n  ║ ═════════ ║\n  ║ 💎 GAMES 💎 ║\n  ╚═══════════╝\n
+            .setDescription('**Welcome Back to the Casino!**\n```\n🎲 ╔═══════════╗ 🪙\n  ║  CASINO   ║\n  ║ ═════════ ║\n  ║ 💎 GAMES 💎 ║\n  ╚═══════════╝\n```\n🎰 Play dice, coinflip, and slots!\n💰 Convert points and win big!\n🎁 Redeem gift cards for real prizes!\n\n🎰 Enjoy our casino games! Have fun!')
+            .addFields(
+                { name: '🎲 Dice Game', value: '• 5x multiplier', inline: true },
+                { name: '🪙 Coinflip', value: '• 2x multiplier', inline: true },
+                { name: '🎰 Lucky Slots', value: '• Jackpot spins', inline: true }
+            )
+            .setFooter({ text: '🎰 Auto-started by bot | All data preserved' })
+            .setColor(0x800080);
+
+        const components = createGamblingButtons();
+        await gamblingChannel.send({ embeds: [embed], components });
+
+        // Send ping notification
+        await gamblingChannel.send('🎰 **CASINO REOPENED!** All games are back online!');
+        console.log('✅ Gambling panel sent + ping notification');
+    }
+
+    // Gift card panel
+    const giftCardChannel = client.channels.cache.get(CHANNELS.gift_cards);
+    if (giftCardChannel) {
+        const embed = new EmbedBuilder()
+            .setTitle('🎁 Gift Card Redemption Center')
+            .setDescription('**Welcome to the Official Gift Card Hub!**\n\n**🎫 REDEMPTION CENTER 🎫**\n```\n╔═══════════════════════╗\n║  🎁 GIFT CARD HUB 🎁  ║\n║═══════════════════════║\n║                       ║\n║   🎁 PCRP  💎 500     ║\n║                       ║\n╚═══════════════════════╝\n```\n**🔗 Available Commands:**\n• `/test_dm` - Test if bot can DM you\n• `/convert_points` - Convert diamonds to gift cards\n• `/convert_giftcard` - Convert gift cards back to diamonds\n\n**📋 How it works:**\n1. **Test your DMs** first with `/test_dm`\n2. **Convert points** using `/convert_points`\n3. **Get support** by opening a ticket below')
+            .addFields(
+                { name: '💎 Minimum Requirements', value: '500 💎 (PCRP)', inline: true },
+                { name: '🏆 Exclusive Reward', value: '🎁 PCRP Gift Cards', inline: true },
+                { name: '⚡ Instant Processing', value: 'DM notifications enabled', inline: true }
+            )
+            .setFooter({ text: '🎁 Auto-started by bot | All data preserved' })
+            .setColor(0xFF6B6B);
+
+        const components = createGiftCardPanelButtons();
+        await giftCardChannel.send({ embeds: [embed], components: [components] });
+        console.log('✅ Gift card panel sent');
+    }
+
+    // Leaderboard panel
+    const leaderboardChannel = client.channels.cache.get(CHANNELS.leaderboard);
+    if (leaderboardChannel) {
+        const users = Object.entries(pointsSystem.data.users);
+        const sortedUsers = users.sort(([, a], [, b]) => b.points - a.points);
+
+        const embed = new EmbedBuilder()
+            .setTitle('🏆 Diamond Points Leaderboard')
+            .setDescription('**Top Diamond Elites:**\n```\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n
