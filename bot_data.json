@@ -17,6 +17,15 @@
       "total_spent": 0,
       "inventory": [],
       "gift_cards_redeemed": []
+    },
+    "1230125242517557313": {
+      "points": 55,
+      "last_claim": "2025-06-24T19:33:21.658Z",
+      "streak": 1,
+      "total_earned": 55,
+      "total_spent": 0,
+      "inventory": [],
+      "gift_cards_redeemed": []
     }
   },
   "settings": {
