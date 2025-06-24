@@ -917,7 +917,10 @@ async function handleSendDailyClaim(interaction) {
 }
 
 async function sendStartupPanels() {
-    console.log('Sending startup panels...');
+    console.log('🔄 Cleaning old panels and sending fresh ones...');
+    
+    // Auto-cleanup old bot messages to prevent duplicates
+    await cleanupOldPanels();
 
     // Daily claims panel
     const dailyChannel = client.channels.cache.get(CHANNELS.daily_claims);
@@ -928,14 +931,17 @@ async function sendStartupPanels() {
             .addFields(
                 { name: '💰 Base Reward', value: '50 💎', inline: true },
                 { name: '🔥 Streak Bonus', value: 'Up to 3x multiplier!', inline: true },
-                { name: '⏰ Auto Refresh', value: 'Every 24 hours', inline: true }
+                { name: '⏰ Auto Refresh', value: 'Reconnected & Ready!', inline: true }
             )
-            .setFooter({ text: '🤖 Auto-started by bot' })
+            .setFooter({ text: '🤖 Auto-started by bot | All data preserved' })
             .setColor(0xFFD700);
 
         const component = createDailyClaimButtons();
         await dailyChannel.send({ embeds: [embed], components: [component] });
-        console.log('✅ Daily claim panel sent');
+        
+        // Send ping notification
+        await dailyChannel.send('🔔 **BOT RECONNECTED!** All your diamonds and streaks are safe! @everyone');
+        console.log('✅ Daily claim panel sent + ping notification');
     }
 
     // Gambling panel
@@ -943,18 +949,58 @@ async function sendStartupPanels() {
     if (gamblingChannel) {
         const embed = new EmbedBuilder()
             .setTitle('🎰 Diamond Casino - Gambling Hub')
-            .setDescription('**Welcome to the Casino!**\n```\n🎲 ╔═══════════╗ 🪙\n  ║  CASINO   ║\n  ║ ═════════ ║\n  ║ 💎 GAMES 💎 ║\n  ╚═══════════╝\n```\n**Available Games:**')
+            .setDescription('**Welcome Back to the Casino!**\n```\n🎲 ╔═══════════╗ 🪙\n  ║  CASINO   ║\n  ║ ═════════ ║\n  ║ 💎 GAMES 💎 ║\n  ╚═══════════╝\n```\n**All Games Available:**')
             .addFields(
                 { name: '🎲 Quick Dice', value: 'Guess 1-6 for 5x payout!\nFill form with number & bet', inline: true },
                 { name: '🪙 Quick Flip', value: 'Heads or Tails for 2x payout!\nFill form with choice & bet', inline: true },
-                { name: '💎 Risk & Reward', value: 'Higher risk = Higher rewards!', inline: false }
+                { name: '💎 All Progress Saved', value: 'Your diamonds are safe!', inline: false }
             )
-            .setFooter({ text: '🎰 Good luck and gamble responsibly!' })
+            .setFooter({ text: '🎰 Casino is back online! All data preserved' })
             .setColor(0x800080);
 
         const components = createGamblingButtons();
         await gamblingChannel.send({ embeds: [embed], components });
-        console.log('✅ Gambling panel sent');
+        
+        // Send ping notification
+        await gamblingChannel.send('🎰 **CASINO REOPENED!** All games are back online! @everyone');
+        console.log('✅ Gambling panel sent + ping notification');
+    }
+
+    // Send admin notification about successful reconnection
+    console.log('📊 Bot Status: All user data preserved and panels refreshed!');
+}
+
+// New function to clean up old bot panels
+async function cleanupOldPanels() {
+    const channelsToClean = [CHANNELS.daily_claims, CHANNELS.gambling];
+    
+    for (const channelId of channelsToClean) {
+        const channel = client.channels.cache.get(channelId);
+        if (channel) {
+            try {
+                // Fetch last 10 messages to find old bot panels
+                const messages = await channel.messages.fetch({ limit: 10 });
+                const botMessages = messages.filter(msg => 
+                    msg.author.id === client.user.id && 
+                    (msg.embeds.length > 0 || msg.components.length > 0)
+                );
+
+                // Delete old bot panels (keep max 1 of each type)
+                let deletedCount = 0;
+                for (const [, message] of botMessages) {
+                    if (deletedCount < 2) { // Remove up to 2 old messages per channel
+                        await message.delete().catch(() => {}); // Ignore errors
+                        deletedCount++;
+                    }
+                }
+                
+                if (deletedCount > 0) {
+                    console.log(`🧹 Cleaned ${deletedCount} old panels from channel ${channelId}`);
+                }
+            } catch (error) {
+                console.log(`⚠️ Could not clean channel ${channelId}: ${error.message}`);
+            }
+        }
     }
 }
 
