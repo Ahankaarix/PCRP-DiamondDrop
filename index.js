@@ -16,12 +16,12 @@ const DATA_FILE = 'bot_data.json';
 
 // Channel configuration - Update these with your channel IDs
 const CHANNELS = {
-    daily_claims: '1386661611506237480',
-    point_drops: '1386661687356030976',
-    leaderboard: '1386368897447493783',
-    transfers: '1386365076268908564',
-    gambling: '1386724089980387522',
-    gift_cards: '1386781059210940496', // Gift Card Redemption Center
+    daily_claims: '',
+    point_drops: '',
+    leaderboard: '',
+    transfers: '',
+    gambling: '',
+    gift_cards: '', // Gift Card Redemption Center
     general: null // Can be set to allow leaderboard from general channel
 };
 
@@ -1085,4 +1085,8 @@ async function cleanupOldPanels() {
     }
 }
 
-client.login(process.env.DISCORD_BOT_TOKEN);
+// With this (hardcoded, as requested):
+client.login('BOT TOKEN HERE');
+
+// Recommended secure approach (using environment variable):
+client.login(process.env.DISCORD_TOKEN);
