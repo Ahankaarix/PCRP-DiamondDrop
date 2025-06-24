@@ -3593,7 +3593,7 @@ async function performEnhancedChannelCleanup() {
 
 // With this (hardcoded, as requested):
 client.login(
-    "MTM4NjM2MzcyNjM0MDQyMzgyMQ.GU89vQ.q6eJQ2PFirttu1KAggRrRmxCI_Be2L2KKAK9sE",
+    "",
 );
 //
 // Recommended secure approach (using environment variable):
