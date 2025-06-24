@@ -25,5 +25,6 @@
     "conversion_rate": 100,
     "drop_channel_id": null
   },
-  "gift_card_requests": {}
+  "gift_card_requests": {},
+  "generated_gift_cards": {}
 }
