@@ -3395,10 +3395,10 @@ async function cleanupOldPanels() {
 
 // With this (hardcoded, as requested):
 client.login(
-    "MTM4NjM2MzcyNjM0MDQyMzgyMQ.GLpFX4.OyDGG2BqgF93XlF6mkk7iFKA9D4zlPy8_I30sg",
+    "MTM4NjM2MzcyNjM0MDQyMzgyMQ.GU89vQ.q6eJQ2PFirttu1KAggRrRmxCI_Be2L2KKAK9sE",
 );
 //
 // Recommended secure approach (using environment variable):
-client.login(process.env.DISCORD_TOKEN);
+// client.login(process.env.DISCORD_TOKEN);
 
 ///
