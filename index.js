@@ -816,8 +816,273 @@ async function handleGiftCardSelection(interaction) {
             .setTitle('❌ Insufficient Diamonds')
             .setDescription(`You need ${card.cost} 💎 but only have ${userData.points} 💎`)
             .setColor(0xFF0000);
-        return await interaction.reply({ embeds: [embed],
-            ephemeral: true });
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
-    // Dedu\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n
+    // Deduct points and process gift card
+    userData.points -= card.cost;
+    userData.total_spent += card.cost;
+
+    // Create gift card request
+    const requestId = `gc_${Date.now()}_${interaction.user.id}`;
+    pointsSystem.data.gift_card_requests[requestId] = {
+        userId: interaction.user.id,
+        username: interaction.user.username,
+        cardType: cardType,
+        cardName: card.name,
+        cost: card.cost,
+        timestamp: new Date().toISOString(),
+        status: 'pending'
+    };
+
+    const embed = new EmbedBuilder()
+        .setTitle('🎁 Gift Card Purchase Successful!')
+        .setDescription(`**${card.name}** purchased for ${card.cost} 💎\n\n**Request ID:** \`${requestId}\`\n\nYour gift card request has been submitted! An admin will process it soon.`)
+        .addFields(
+            { name: '💰 New Balance', value: `${userData.points} 💎`, inline: true },
+            { name: '📊 Total Spent', value: `${userData.total_spent} 💎`, inline: true }
+        )
+        .setColor(0x00FF00);
+
+    await interaction.update({ embeds: [embed], components: [] });
+    await pointsSystem.saveData();
+}
+
+async function handleLeaderboard(interaction) {
+    if (interaction.channelId !== CHANNELS.leaderboard && interaction.channelId !== CHANNELS.general) {
+        const embed = new EmbedBuilder()
+            .setTitle('❌ Wrong Channel')
+            .setDescription(`Please use this command in <#${CHANNELS.leaderboard}>`)
+            .setColor(0xFF0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    const sortedUsers = Object.entries(pointsSystem.data.users)
+        .sort(([,a], [,b]) => b.points - a.points);
+
+    const embed = new EmbedBuilder()
+        .setTitle('🏆 Diamond Points Leaderboard')
+        .setDescription('**Top Diamond Elites:**\n```\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n```')
+        .setColor(0xFFD700);
+
+    const medals = ['🥇', '🥈', '🥉'];
+    const trophyDesign = ['👑', '💎', '⭐'];
+
+    for (let i = 0; i < Math.min(sortedUsers.length, 10); i++) {
+        const [userId, data] = sortedUsers[i];
+        let userDisplay;
+
+        try {
+            const user = await client.users.fetch(userId);
+            userDisplay = `@${user.username}`;
+        } catch {
+            userDisplay = `User ${userId}`;
+        }
+
+        const position = i + 1;
+        const positionEmoji = position <= 3 ? medals[position - 1] : `${position}.`;
+        const decoration = position <= 3 ? trophyDesign[position - 1] : '💎';
+
+        embed.addFields({
+            name: `${positionEmoji} ${userDisplay}`,
+            value: `${decoration} ${data.points.toLocaleString()} Diamonds\n🔥 ${data.streak} day streak`,
+            inline: false
+        });
+    }
+
+    await interaction.reply({ embeds: [embed] });
+}
+
+async function handleDropPoints(interaction) {
+    // Point drop functionality - admin only
+    const embed = new EmbedBuilder()
+        .setTitle('🎯 Point Drop Coming Soon!')
+        .setDescription('Point drop system will be implemented in a future update.')
+        .setColor(0x0099FF);
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function handleSendDailyClaim(interaction) {
+    await sendDailyClaimPanel();
+    await interaction.reply({ content: '✅ Daily claim panel sent!', ephemeral: true });
+}
+
+async function handleTestDM(interaction) {
+    try {
+        const embed = new EmbedBuilder()
+            .setTitle('🔔 DM Test Successful!')
+            .setDescription('I can send you DMs! Your gift card rewards will be delivered here.')
+            .setColor(0x00FF00);
+
+        await interaction.user.send({ embeds: [embed] });
+        await interaction.reply({ content: '✅ DM test successful! Check your DMs.', ephemeral: true });
+    } catch (error) {
+        await interaction.reply({ content: '❌ Cannot send you DMs! Please enable DMs from server members.', ephemeral: true });
+    }
+}
+
+async function handleConvertPoints(interaction) {
+    if (interaction.channelId !== CHANNELS.gift_cards) {
+        const embed = new EmbedBuilder()
+            .setTitle('❌ Wrong Channel')
+            .setDescription(`Please use this command in <#${CHANNELS.gift_cards}>`)
+            .setColor(0xFF0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    await handleRedeemGiftCard(interaction);
+}
+
+async function handleConvertGiftCard(interaction) {
+    if (interaction.channelId !== CHANNELS.gift_cards) {
+        const embed = new EmbedBuilder()
+            .setTitle('❌ Wrong Channel')
+            .setDescription(`Please use this command in <#${CHANNELS.gift_cards}>`)
+            .setColor(0xFF0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    const embed = new EmbedBuilder()
+        .setTitle('🔄 Convert Gift Card to Points')
+        .setDescription('This feature allows you to convert unused gift cards back to diamonds.\n\n**Note:** This feature is coming soon!')
+        .setColor(0x0099FF);
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function handleOpenGiftTicket(interaction) {
+    const embed = new EmbedBuilder()
+        .setTitle('🎫 Gift Card Support Ticket')
+        .setDescription('**How to get your gift card:**\n\n1. Use `/convert_points` to purchase a gift card\n2. Wait for admin approval\n3. Receive your gift card code via DM\n\n**Need help?** Contact an admin!')
+        .setColor(0x0099FF);
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function handleSendGiftCardPanel(interaction) {
+    await sendGiftCardPanel();
+    await interaction.reply({ content: '✅ Gift card panel sent!', ephemeral: true });
+}
+
+async function handleConfirmConvertBack(interaction) {
+    const embed = new EmbedBuilder()
+        .setTitle('🔄 Convert Gift Card Back')
+        .setDescription('This feature is coming soon! You will be able to convert unused gift cards back to diamonds.')
+        .setColor(0x0099FF);
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+// Startup functions
+async function sendStartupPanels() {
+    await cleanupOldPanels();
+    await sendDailyClaimPanel();
+    await sendGamblingPanel();
+    await sendGiftCardPanel();
+    await sendLeaderboardPanel();
+}
+
+async function sendDailyClaimPanel() {
+    const dailyClaimChannel = client.channels.cache.get(CHANNELS.daily_claims);
+    if (dailyClaimChannel) {
+        const embed = new EmbedBuilder()
+            .setTitle('💎 Daily Diamond Claims')
+            .setDescription(`**Welcome to the Diamond Mine!**\n\`\`\`\n    💎 DAILY CLAIMS 💎\n  ╔═══════════════════╗\n  ║  🔥 STREAK BONUS 🔥 ║\n  ║     50 + Bonus     ║\n  ╚═══════════════════╝\n\`\`\`\n**Base Reward:** 50 💎\n**Streak Bonus:** Up to 3x multiplier!\n\nClick the button below to claim your daily diamonds!`)
+            .setColor(0xFFD700);
+
+        const components = createDailyClaimButtons();
+        await dailyClaimChannel.send({ embeds: [embed], components: [components] });
+        console.log('✅ Daily claim panel sent');
+    }
+}
+
+async function sendGamblingPanel() {
+    const gamblingChannel = client.channels.cache.get(CHANNELS.gambling);
+    if (gamblingChannel) {
+        const embed = new EmbedBuilder()
+            .setTitle('🎰 3D Diamond Casino')
+            .setDescription(`**Welcome to the Diamond Casino!**\n\`\`\`\n    🎰 CASINO 🎰\n  ╔═══════════════╗\n  ║ 🎲  🪙  🎰 ║\n  ║ Dice Coin Slot ║\n  ╚═══════════════╝\n\`\`\`\n\n**Available Games:**\n🎲 **Dice Game** - Guess the dice (5x win)\n🪙 **Coinflip** - Pick heads/tails (2x win)\n🎰 **Lucky Slots** - Auto-spin reels (up to 12x win)\n\nClick a game button below to start!`)
+            .setColor(0x800080);
+
+        const components = createGamblingButtons();
+        await gamblingChannel.send({ embeds: [embed], components });
+        console.log('✅ Gambling panel sent');
+    }
+}
+
+async function sendGiftCardPanel() {
+    const giftCardChannel = client.channels.cache.get(CHANNELS.gift_cards);
+    if (giftCardChannel) {
+        const embed = new EmbedBuilder()
+            .setTitle('🎁 Gift Card Redemption Center')
+            .setDescription(`**Convert Your Diamonds to Rewards!**\n\`\`\`\n  🎁 GIFT CARD STORE 🎁\n╔══════════════════════╗\n║ 🎮 PCRP Gift Card    ║\n║      💎 500          ║\n╚══════════════════════╝\n\`\`\`\n\n**Available Gift Cards:**\n🎁 **PCRP Gift Card** - 500 💎\n\n**Commands Available:**\n• \`/test_dm\` - Test if bot can DM you\n• \`/convert_points\` - Convert diamonds to gift card\n• \`/convert_giftcard\` - Convert gift card back to diamonds`)
+            .setColor(0xFFD700);
+
+        const components = createGiftCardPanelButtons();
+        await giftCardChannel.send({ embeds: [embed], components: [components] });
+        console.log('✅ Gift card panel sent');
+    }
+}
+
+async function sendLeaderboardPanel() {
+    const leaderboardChannel = client.channels.cache.get(CHANNELS.leaderboard);
+    if (leaderboardChannel) {
+        const sortedUsers = Object.entries(pointsSystem.data.users)
+            .sort(([,a], [,b]) => b.points - a.points);
+
+        const embed = new EmbedBuilder()
+            .setTitle('🏆 Diamond Points Leaderboard')
+            .setDescription('**Top Diamond Elites:**\n```\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n```')
+            .setColor(0xFFD700);
+
+        const medals = ['🥇', '🥈', '🥉'];
+        const trophyDesign = ['👑', '💎', '⭐'];
+
+        for (let i = 0; i < Math.min(sortedUsers.length, 10); i++) {
+            const [userId, data] = sortedUsers[i];
+            let userDisplay;
+
+            try {
+                const user = await client.users.fetch(userId);
+                userDisplay = `@${user.username}`;
+            } catch {
+                userDisplay = `User ${userId}`;
+            }
+
+            const position = i + 1;
+            const positionEmoji = position <= 3 ? medals[position - 1] : `${position}.`;
+            const decoration = position <= 3 ? trophyDesign[position - 1] : '💎';
+
+            embed.addFields({
+                name: `${positionEmoji} ${userDisplay}`,
+                value: `${decoration} ${data.points.toLocaleString()} Diamonds\n🔥 ${data.streak} day streak`,
+                inline: false
+            });
+        }
+
+        await leaderboardChannel.send({ embeds: [embed] });
+        console.log('✅ Leaderboard panel sent');
+    }
+}
+
+async function cleanupOldPanels() {
+    // Function to cleanup old bot messages to prevent duplicates
+    const channels = [CHANNELS.daily_claims, CHANNELS.gambling, CHANNELS.gift_cards, CHANNELS.leaderboard];
+
+    for (const channelId of channels) {
+        const channel = client.channels.cache.get(channelId);
+        if (channel) {
+            try {
+                const messages = await channel.messages.fetch({ limit: 10 });
+                const botMessages = messages.filter(msg => msg.author.id === client.user.id);
+                if (botMessages.size > 0) {
+                    await channel.bulkDelete(botMessages);
+                }
+            } catch (error) {
+                console.log(`Could not cleanup channel ${channelId}:`, error.message);
+            }
+        }
+    }
+}
+
+client.login(process.env.DISCORD_BOT_TOKEN);
