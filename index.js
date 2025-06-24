@@ -1607,7 +1607,16 @@ async function showUserCommands(interaction) {
         )
         .setColor(0x00FF00);
 
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+    const reply = await interaction.reply({ embeds: [embed], ephemeral: true });
+
+    // Auto-delete the user commands information after 5 minutes
+    setTimeout(async () => {
+        try {
+            await reply.delete();
+        } catch (error) {
+            console.log('Could not delete user commands information:', error.message);
+        }
+    }, 5 * 60 * 1000); // 5 minutes
 }
 
 async function showAdminCommands(interaction) {
