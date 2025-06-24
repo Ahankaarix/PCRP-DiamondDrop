@@ -1177,4 +1177,4 @@ async function sendStartupPanels() {
 
         const embed = new EmbedBuilder()
             .setTitle('🏆 Diamond Points Leaderboard')
-            .setDescription('**Top Diamond Elites:**\n```\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n
+            .setDescription('**Top Diamond Elites:**\n```\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n```')
