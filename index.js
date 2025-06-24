@@ -1011,11 +1011,15 @@ async function handleDiceGame(interaction) {
 
     const reply = await interaction.reply({ embeds: [embed] });
 
-    // Auto-delete the result message after 3 minutes
+    // Auto-delete the result message after 3 minutes and try to delete user's triggering message
     setTimeout(
         async () => {
             try {
                 await reply.delete();
+                // Also try to delete the original interaction message if it exists
+                if (interaction.message && interaction.message.deletable) {
+                    await interaction.message.delete();
+                }
             } catch (error) {
                 console.log(
                     "Could not delete gambling result message:",
@@ -1111,11 +1115,15 @@ async function handleCoinflipGame(interaction) {
 
     const reply = await interaction.reply({ embeds: [embed] });
 
-    // Auto-delete the result message after 3 minutes
+    // Auto-delete the result message after 3 minutes and try to delete user's triggering message
     setTimeout(
         async () => {
             try {
                 await reply.delete();
+                // Also try to delete the original interaction message if it exists
+                if (interaction.message && interaction.message.deletable) {
+                    await interaction.message.delete();
+                }
             } catch (error) {
                 console.log(
                     "Could not delete coinflip result message:",
@@ -1207,11 +1215,15 @@ async function handleSlotsGame(interaction) {
 
     const reply = await interaction.reply({ embeds: [embed] });
 
-    // Auto-delete the result message after 3 minutes
+    // Auto-delete the result message after 3 minutes and try to delete user's triggering message
     setTimeout(
         async () => {
             try {
                 await reply.delete();
+                // Also try to delete the original interaction message if it exists
+                if (interaction.message && interaction.message.deletable) {
+                    await interaction.message.delete();
+                }
             } catch (error) {
                 console.log(
                     "Could not delete slots result message:",
@@ -3292,7 +3304,7 @@ async function sendAdminGiftCardPanel() {
 }
 
 async function cleanupOldPanels() {
-    // Function to cleanup ALL bot messages from ALL channels for fresh start
+    // Function to cleanup ALL bot messages AND user interaction messages from ALL channels for fresh start
     console.log("🧹 Starting comprehensive channel cleanup...");
 
     // Clean up expired gift cards and user data first
@@ -3357,17 +3369,45 @@ async function cleanupOldPanels() {
                     `🧹 Cleaning channel: ${channel.name || channelId}`,
                 );
 
+                let totalCleanedMessages = 0;
+
                 // Fetch more messages to ensure complete cleanup
                 let fetched;
                 do {
                     fetched = await channel.messages.fetch({ limit: 100 });
-                    const botMessages = fetched.filter(
-                        (msg) => msg.author.id === client.user.id,
-                    );
+                    
+                    // Filter messages to delete: bot messages + user interaction responses
+                    const messagesToDelete = fetched.filter((msg) => {
+                        // Delete bot messages
+                        if (msg.author.id === client.user.id) {
+                            return true;
+                        }
+                        
+                        // Delete user messages that are bot interaction responses (contains bot interaction indicators)
+                        if (msg.author.bot === false && msg.content) {
+                            const content = msg.content.toLowerCase();
+                            // Check for common bot interaction patterns
+                            if (
+                                content.includes('💎') ||
+                                content.includes('claimed') ||
+                                content.includes('diamonds') ||
+                                content.includes('gift card') ||
+                                content.includes('mining') ||
+                                content.includes('casino') ||
+                                content.includes('leaderboard') ||
+                                msg.embeds.length > 0 || // Messages with embeds are likely bot responses
+                                msg.components.length > 0 // Messages with buttons/components
+                            ) {
+                                return true;
+                            }
+                        }
+                        
+                        return false;
+                    });
 
-                    if (botMessages.size > 0) {
+                    if (messagesToDelete.size > 0) {
                         // Split into chunks of 100 for bulk delete (Discord limit)
-                        const messageArray = Array.from(botMessages.values());
+                        const messageArray = Array.from(messagesToDelete.values());
                         for (let i = 0; i < messageArray.length; i += 100) {
                             const chunk = messageArray.slice(i, i + 100);
                             if (chunk.length > 1) {
@@ -3376,11 +3416,15 @@ async function cleanupOldPanels() {
                                 await chunk[0].delete();
                             }
                         }
-                        console.log(
-                            `✅ Deleted ${botMessages.size} bot messages from ${channel.name || channelId}`,
-                        );
+                        totalCleanedMessages += messagesToDelete.size;
                     }
                 } while (fetched.size === 100); // Continue if we got a full batch
+
+                if (totalCleanedMessages > 0) {
+                    console.log(
+                        `✅ Deleted ${totalCleanedMessages} messages (bot + user interactions) from ${channel.name || channelId}`,
+                    );
+                }
             } catch (error) {
                 console.log(
                     `❌ Could not cleanup channel ${channelId}:`,
