@@ -2534,6 +2534,29 @@ function createPointDropTicketButtons() {
 }
 
 async function showPointDropTicketModal(interaction) {
+    // Restrict to specific admin user IDs only
+    const allowedUserIDs = ["879396413010743337", "959692217885294632", "1054207830292447324"];
+    
+    if (!allowedUserIDs.includes(interaction.user.id)) {
+        const embed = new EmbedBuilder()
+            .setTitle("❌ Access Denied")
+            .setDescription("You don't have permission to create point drop tickets.")
+            .setColor(0xff0000);
+        
+        const reply = await interaction.reply({ embeds: [embed], ephemeral: true });
+        
+        // Auto-delete response after 1 minute
+        setTimeout(async () => {
+            try {
+                await reply.delete();
+            } catch (error) {
+                console.log("Could not delete access denied message:", error.message);
+            }
+        }, 60 * 1000); // 1 minute
+        
+        return;
+    }
+
     const modal = new ModalBuilder()
         .setCustomId("point_drop_ticket_modal")
         .setTitle("🎯 Point Drop Event Request");
@@ -2689,7 +2712,16 @@ async function handlePointDropTicketSubmission(interaction) {
         .setColor(0x00ff00)
         .setTimestamp();
 
-    await interaction.reply({ embeds: [confirmEmbed], ephemeral: true });
+    const reply = await interaction.reply({ embeds: [confirmEmbed], ephemeral: true });
+    
+    // Auto-delete response after 1 minute
+    setTimeout(async () => {
+        try {
+            await reply.delete();
+        } catch (error) {
+            console.log("Could not delete ticket submission confirmation:", error.message);
+        }
+    }, 60 * 1000); // 1 minute
 }
 
 async function handleTicketApproval(interaction, ticketId, approved) {
@@ -3066,7 +3098,16 @@ async function showPointDropGuidelines(interaction) {
             text: "Follow these guidelines for better approval chances!",
         });
 
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+    const reply = await interaction.reply({ embeds: [embed], ephemeral: true });
+    
+    // Auto-delete response after 1 minute
+    setTimeout(async () => {
+        try {
+            await reply.delete();
+        } catch (error) {
+            console.log("Could not delete guidelines message:", error.message);
+        }
+    }, 60 * 1000); // 1 minute
 }
 
 
@@ -3085,7 +3126,19 @@ async function showPointDropHistory(interaction) {
                 "You haven't submitted any point drop tickets yet!\n\nClick **Create Point Drop Ticket** to submit your first request.",
             )
             .setColor(0x0099ff);
-        return await interaction.reply({ embeds: [embed], ephemeral: true });
+        
+        const reply = await interaction.reply({ embeds: [embed], ephemeral: true });
+        
+        // Auto-delete response after 1 minute
+        setTimeout(async () => {
+            try {
+                await reply.delete();
+            } catch (error) {
+                console.log("Could not delete empty history message:", error.message);
+            }
+        }, 60 * 1000); // 1 minute
+        
+        return;
     }
 
     const embed = new EmbedBuilder()
@@ -3120,7 +3173,16 @@ async function showPointDropHistory(interaction) {
         });
     }
 
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+    const reply = await interaction.reply({ embeds: [embed], ephemeral: true });
+    
+    // Auto-delete response after 1 minute
+    setTimeout(async () => {
+        try {
+            await reply.delete();
+        } catch (error) {
+            console.log("Could not delete history message:", error.message);
+        }
+    }, 60 * 1000); // 1 minute
 }
 
 async function handleDiamondMining(interaction, eventId) {
