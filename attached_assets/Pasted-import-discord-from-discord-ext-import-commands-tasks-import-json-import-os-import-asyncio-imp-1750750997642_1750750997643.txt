@@ -1,0 +1,1021 @@
+import discord
+from discord.ext import commands, tasks
+import json
+import os
+import asyncio
+import string
+import random
+from datetime import datetime, timedelta
+import aiofiles
+
+# Bot configuration
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix='!', intents=intents)
+
+# Data file path
+DATA_FILE = 'bot_data.json'
+
+# Channel configuration - Updated as requested
+CHANNELS = {
+    'daily_claims': 1386661611506237480,
+    'point_drops': 1386661687356030976,
+    'leaderboard': 1386368897447493783,
+    'transfers': 1386365076268908564,
+    'gambling': 1386724089980387522,
+    'general': None  # Can be set to allow leaderboard from general channel
+}
+
+# Gift card options
+GIFT_CARDS = {
+    'steam': {'name': 'Steam Gift Card', 'cost': 1000, 'emoji': '🎮'},
+    'amazon': {'name': 'Amazon Gift Card', 'cost': 1500, 'emoji': '📦'},
+    'spotify': {'name': 'Spotify Premium', 'cost': 800, 'emoji': '🎵'},
+    'netflix': {'name': 'Netflix Subscription', 'cost': 1200, 'emoji': '🎬'},
+    'google': {'name': 'Google Play Card', 'cost': 900, 'emoji': '📱'}
+}
+
+class PointsBot:
+    def __init__(self):
+        self.data = {
+            'users': {},
+            'settings': {
+                'daily_reward': 50,
+                'max_streak_multiplier': 3.0,
+                'conversion_rate': 100,
+                'drop_channel_id': None
+            },
+            'gift_card_requests': {}
+        }
+        self.load_data()
+
+    async def save_data(self):
+        """Save data to JSON file asynchronously"""
+        try:
+            async with aiofiles.open(DATA_FILE, 'w') as f:
+                await f.write(json.dumps(self.data, indent=2, default=str))
+        except Exception as e:
+            print(f"Error saving data: {e}")
+
+    def load_data(self):
+        """Load data from JSON file"""
+        try:
+            if os.path.exists(DATA_FILE):
+                with open(DATA_FILE, 'r') as f:
+                    loaded_data = json.load(f)
+                    self.data.update(loaded_data)
+                print(f"Loaded data for {len(self.data['users'])} users")
+            else:
+                print("No existing data file found, starting fresh")
+        except Exception as e:
+            print(f"Error loading data: {e}")
+
+    def get_user_data(self, user_id):
+        """Get user data, create if doesn't exist"""
+        user_id = str(user_id)
+        if user_id not in self.data['users']:
+            self.data['users'][user_id] = {
+                'points': 0,
+                'last_claim': None,
+                'streak': 0,
+                'total_earned': 0,
+                'total_spent': 0,
+                'inventory': [],
+                'gift_cards_redeemed': []
+            }
+        return self.data['users'][user_id]
+
+    def calculate_streak_multiplier(self, streak):
+        """Calculate multiplier based on streak"""
+        max_multiplier = self.data['settings']['max_streak_multiplier']
+        return min(1 + (streak * 0.1), max_multiplier)
+
+# Initialize points system
+points_system = PointsBot()
+
+# View Classes
+class DailyClaimView(discord.ui.View):
+    def __init__(self, timeout=86400):  # 24 hours timeout
+        super().__init__(timeout=timeout)
+
+    @discord.ui.button(label='Claim Daily Diamonds', style=discord.ButtonStyle.success, emoji='💎')
+    async def claim_daily_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user_data = points_system.get_user_data(interaction.user.id)
+        now = datetime.now()
+
+        if user_data['last_claim']:
+            last_claim = datetime.fromisoformat(user_data['last_claim'])
+            time_diff = now - last_claim
+
+            if time_diff < timedelta(hours=24):
+                next_claim = last_claim + timedelta(hours=24)
+                embed = discord.Embed(
+                    title="⏰ Daily Claim Cooldown",
+                    description=f"You can claim again <t:{int(next_claim.timestamp())}:R>",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+
+            if time_diff <= timedelta(hours=36):
+                user_data['streak'] += 1
+            else:
+                user_data['streak'] = 1
+        else:
+            user_data['streak'] = 1
+
+        base_reward = points_system.data['settings']['daily_reward']
+        multiplier = points_system.calculate_streak_multiplier(user_data['streak'])
+        total_reward = int(base_reward * multiplier)
+
+        user_data['points'] += total_reward
+        user_data['total_earned'] += total_reward
+        user_data['last_claim'] = now.isoformat()
+
+        embed = discord.Embed(
+            title="💎 Daily Diamond Claim!",
+            description=f"**Reward:** {total_reward} 💎\n{interaction.user.mention} claimed their daily diamonds!",
+            color=discord.Color.gold()
+        )
+        embed.add_field(name="💰 Reward", value=f"{total_reward} 💎", inline=True)
+        embed.add_field(name="🔥 Streak", value=f"{user_data['streak']} days", inline=True)
+        embed.add_field(name="📈 Multiplier", value=f"{multiplier:.1f}x", inline=True)
+
+        await interaction.response.send_message(embed=embed, ephemeral=False)
+        await points_system.save_data()
+
+class DiceFormModal(discord.ui.Modal, title='🎲 Dice Game Setup'):
+    def __init__(self):
+        super().__init__()
+
+    guess = discord.ui.TextInput(
+        label='Your Guess (1-6)',
+        placeholder='Enter a number between 1 and 6...',
+        required=True,
+        max_length=1
+    )
+
+    bet_amount = discord.ui.TextInput(
+        label='Bet Amount (Minimum 10 Diamonds)',
+        placeholder='Enter your bet amount (min 10)...',
+        required=True,
+        max_length=10
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            # Validate and convert inputs
+            guess_input = self.guess.value.strip()
+            bet_input = self.bet_amount.value.strip()
+            
+            if not guess_input.isdigit():
+                await interaction.response.send_message("❌ Please enter a valid number for your guess (1-6)!", ephemeral=True)
+                return
+                
+            if not bet_input.isdigit():
+                await interaction.response.send_message("❌ Please enter a valid number for your bet amount!", ephemeral=True)
+                return
+            
+            guess_num = int(guess_input)
+            bet = int(bet_input)
+
+            if guess_num < 1 or guess_num > 6:
+                await interaction.response.send_message("❌ Guess must be between 1 and 6!", ephemeral=True)
+                return
+
+            if bet < 10:
+                await interaction.response.send_message("❌ Minimum bet is 10 diamonds!", ephemeral=True)
+                return
+
+            user_data = points_system.get_user_data(interaction.user.id)
+
+            if user_data['points'] < bet:
+                await interaction.response.send_message(f"❌ Insufficient points! You have {user_data['points']} 💎 but need {bet} 💎", ephemeral=True)
+                return
+
+            result = random.randint(1, 6)
+            won = guess_num == result
+
+            dice_faces = {
+                1: "⚀", 2: "⚁", 3: "⚂", 
+                4: "⚃", 5: "⚄", 6: "⚅"
+            }
+
+            if won:
+                winnings = bet * 5
+                user_data['points'] += winnings
+                user_data['total_earned'] += winnings
+                color = discord.Color.green()
+                title = "🎲 LUCKY DICE! You Won!"
+                result_text = f"**Your Guess:** {guess_num} {dice_faces[guess_num]} ✅\n**Dice Result:** {result} {dice_faces[result]}\n**Won:** {winnings} 💎 (5x multiplier!)"
+            else:
+                user_data['points'] -= bet
+                user_data['total_spent'] += bet
+                color = discord.Color.red()
+                title = "🎲 Dice Roll - Try Again!"
+                result_text = f"**Your Guess:** {guess_num} {dice_faces[guess_num]} ❌\n**Dice Result:** {result} {dice_faces[result]}\n**Lost:** {bet} 💎"
+
+            embed = discord.Embed(
+                title=title,
+                description=f"**🎲 Dice Game Result 🎲**\n{result_text}",
+                color=color
+            )
+            embed.add_field(name="💰 New Balance", value=f"{user_data['points']} 💎", inline=True)
+            embed.add_field(name="🎯 Bet Amount", value=f"{bet} 💎", inline=True)
+
+            await interaction.response.send_message(embed=embed, ephemeral=False)
+            await points_system.save_data()
+
+        except ValueError:
+            await interaction.response.send_message("❌ Please enter valid numbers only! Check your guess (1-6) and bet amount.", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+class CoinflipFormModal(discord.ui.Modal, title='🪙 Coinflip Game Setup'):
+    def __init__(self):
+        super().__init__()
+
+    choice = discord.ui.TextInput(
+        label='Your Choice (heads/tails or H/T)',
+        placeholder='Enter heads, tails, H, or T...',
+        required=True,
+        max_length=5
+    )
+
+    bet_amount = discord.ui.TextInput(
+        label='Bet Amount (Minimum 10 Diamonds)',
+        placeholder='Enter your bet amount (min 10)...',
+        required=True,
+        max_length=10
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            user_input = self.choice.value.strip()
+            bet_input = self.bet_amount.value.strip()
+            
+            # Validate bet amount input
+            if not bet_input.isdigit():
+                await interaction.response.send_message("❌ Please enter a valid number for your bet amount!", ephemeral=True)
+                return
+            
+            bet = int(bet_input)
+            
+            # Convert user input to full form (accept H/T shortcuts)
+            user_input_lower = user_input.lower()
+            if user_input_lower in ['heads', 'h']:
+                user_choice = 'heads'
+            elif user_input_lower in ['tails', 't']:
+                user_choice = 'tails'
+            else:
+                await interaction.response.send_message("❌ Choice must be 'heads', 'tails', 'H', or 'T'!\n**Suggestions:** H (Heads) or T (Tails)", ephemeral=True)
+                return
+
+            if bet < 10:
+                await interaction.response.send_message("❌ Minimum bet is 10 diamonds!", ephemeral=True)
+                return
+
+            user_data = points_system.get_user_data(interaction.user.id)
+
+            if user_data['points'] < bet:
+                await interaction.response.send_message(f"❌ Insufficient points! You have {user_data['points']} 💎", ephemeral=True)
+                return
+
+            result = random.choice(['heads', 'tails'])
+            won = user_choice == result
+
+            choice_icons = {'heads': '👑', 'tails': '💰'}
+            choice_letters = {'heads': 'H', 'tails': 'T'}
+
+            if won:
+                winnings = bet * 2
+                user_data['points'] += winnings
+                user_data['total_earned'] += winnings
+                color = discord.Color.green()
+                title = "🪙 PERFECT FLIP! You Won!"
+                result_text = f"**Your Choice:** {choice_letters[user_choice]} ({user_choice.title()}) {choice_icons[user_choice]} ✅\n**Coin Result:** {choice_letters[result]} ({result.title()}) {choice_icons[result]}\n**Won:** {winnings} 💎 (2x multiplier!)"
+            else:
+                user_data['points'] -= bet
+                user_data['total_spent'] += bet
+                color = discord.Color.red()
+                title = "🪙 Coin Flip - Next Time!"
+                result_text = f"**Your Choice:** {choice_letters[user_choice]} ({user_choice.title()}) {choice_icons[user_choice]} ❌\n**Coin Result:** {choice_letters[result]} ({result.title()}) {choice_icons[result]}\n**Lost:** {bet} 💎"
+
+            embed = discord.Embed(
+                title=title,
+                description=f"**🪙 Coinflip Game Result 🪙**\n{result_text}",
+                color=color
+            )
+            embed.add_field(name="💰 New Balance", value=f"{user_data['points']} 💎", inline=True)
+            embed.add_field(name="🎯 Bet Amount", value=f"{bet} 💎", inline=True)
+
+            await interaction.response.send_message(embed=embed, ephemeral=False)
+            await points_system.save_data()
+
+        except ValueError:
+            await interaction.response.send_message("❌ Please enter valid inputs! Check your choice (H/T or heads/tails) and bet amount.", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+class GamblingView(discord.ui.View):
+    def __init__(self, timeout=300):
+        super().__init__(timeout=timeout)
+
+    @discord.ui.button(label='🎲 Dice Game', style=discord.ButtonStyle.primary, emoji='🎲')
+    async def quick_dice(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = DiceFormModal()
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label='🪙 Coinflip Game', style=discord.ButtonStyle.success, emoji='🪙')
+    async def quick_coinflip(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = CoinflipFormModal()
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label='🎰 Lucky Slots', style=discord.ButtonStyle.danger, emoji='🎰')
+    async def quick_slots(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user_data = points_system.get_user_data(interaction.user.id)
+        bet = 30
+
+        if user_data['points'] < bet:
+            await interaction.response.send_message(f"❌ You need {bet} 💎 to play! You have {user_data['points']} 💎", ephemeral=True)
+            return
+
+        symbols = ['🍒', '🍋', '🍊', '💎', '⭐', '🍀']
+        weights = [30, 25, 20, 15, 8, 2]
+
+        reels = [random.choices(symbols, weights=weights)[0] for _ in range(3)]
+
+        multiplier = 0
+        if reels[0] == reels[1] == reels[2]:
+            if reels[0] == '💎': multiplier = 10
+            elif reels[0] == '⭐': multiplier = 8
+            elif reels[0] == '🍀': multiplier = 12
+            else: multiplier = 3
+        elif reels[0] == reels[1] or reels[1] == reels[2] or reels[0] == reels[2]:
+            multiplier = 1.5
+
+        winnings = int(bet * multiplier) if multiplier > 0 else 0
+
+        if winnings > 0:
+            user_data['points'] += winnings - bet
+            user_data['total_earned'] += winnings
+            color = discord.Color.green()
+            title = "🎰 JACKPOT!" if multiplier >= 8 else "🎰 Slots Winner!"
+            result_text = f"**Won:** {winnings} 💎 ({multiplier}x!)"
+        else:
+            user_data['points'] -= bet
+            user_data['total_spent'] += bet
+            color = discord.Color.red()
+            title = "🎰 Slots - Spin Again!"
+            result_text = f"**Lost:** {bet} 💎"
+
+        embed = discord.Embed(
+            title=title,
+            description=f"**Slot Result:** {reels[0]} {reels[1]} {reels[2]}\n{result_text}",
+            color=color
+        )
+        embed.add_field(name="💰 Balance", value=f"{user_data['points']} 💎", inline=True)
+
+        await interaction.response.send_message(embed=embed, ephemeral=False)
+        await points_system.save_data()
+
+    @discord.ui.button(label='📊 Game Details', style=discord.ButtonStyle.secondary, emoji='📊', row=1)
+    async def game_details(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = discord.Embed(
+            title="🎮 Casino Games Details",
+            description="**Choose Your Stakes!**",
+            color=discord.Color.blue()
+        )
+
+        embed.add_field(
+            name="🎲 Dice Game",
+            value="• Choose number 1-6\n• Minimum bet: 10 💎\n• Win: 5x your bet\n• Form opens on click",
+            inline=True
+        )
+
+        embed.add_field(
+            name="🪙 Coinflip Game",
+            value="• Pick H/T or heads/tails\n• Minimum bet: 10 💎\n• Win: 2x your bet\n• Form opens on click",
+            inline=True
+        )
+
+        embed.add_field(
+            name="🎰 Lucky Slots",
+            value="• Auto-spin reels\n• Set your own bet\n• Win: Up to 12x bet\n• Instant play",
+            inline=True
+        )
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+class PointDropView(discord.ui.View):
+    def __init__(self, timeout=360):
+        super().__init__(timeout=timeout)
+        self.is_active = False
+        self.claimed_users = set()
+
+    @discord.ui.button(label='Waiting to Start...', style=discord.ButtonStyle.gray, emoji='⏳', disabled=True)
+    async def claim_points(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self.is_active:
+            await interaction.response.send_message("❌ The claiming period hasn't started yet! Wait for the countdown to finish.", ephemeral=True)
+            return
+
+        if interaction.user.id in self.claimed_users:
+            await interaction.response.send_message("❌ You've already claimed from this drop!", ephemeral=True)
+            return
+
+        self.claimed_users.add(interaction.user.id)
+        user_data = points_system.get_user_data(interaction.user.id)
+        user_data['points'] += 10
+        user_data['total_earned'] += 10
+
+        await interaction.response.send_message(f"✅ {interaction.user.mention} claimed 10 Diamonds! Total claimed: {len(self.claimed_users)} users", ephemeral=False)
+        await points_system.save_data()
+
+    async def start_countdown(self, message):
+        self.message = message
+
+        for remaining in range(300, 0, -30):
+            minutes = remaining // 60
+            seconds = remaining % 60
+
+            embed = discord.Embed(
+                title="⏳ Point Drop Starting Soon!",
+                description=f"Get ready! Claiming starts in **{minutes}m {seconds}s**\n\nEach claim gives **10 Diamonds**! 💎",
+                color=discord.Color.orange()
+            )
+
+            try:
+                await message.edit(embed=embed, view=self)
+                await asyncio.sleep(30)
+            except:
+                return
+
+        await self.start_claiming()
+
+    async def start_claiming(self):
+        self.is_active = True
+        button = self.children[0]
+        button.label = 'Claim 10 Diamonds!'
+        button.style = discord.ButtonStyle.success
+        button.disabled = False
+        button.emoji = '💎'
+
+        embed = discord.Embed(
+            title="🚀 Point Drop Active!",
+            description="**3D Active Animation:**\n```\n✨ ╭─────╮ ✨\n  ╱ 💎💎💎 ╱\n ╱ 💎💎💎 ╱\n╱ 💎💎💎 ╱\n╰─────────╯\n```\n**Claiming is now LIVE!**\nClick to claim 10 Diamonds!",
+            color=discord.Color.green()
+        )
+
+        try:
+            await self.message.edit(embed=embed, view=self)
+        except:
+            pass
+
+        for remaining in range(60, 0, -10):
+            await asyncio.sleep(10)
+            embed.add_field(name="⏰ Time Left", value=f"{remaining}s", inline=True)
+            embed.add_field(name="👥 Claims", value=f"{len(self.claimed_users)}", inline=True)
+
+            try:
+                await self.message.edit(embed=embed, view=self)
+                embed.clear_fields()
+            except:
+                break
+
+        await self.end_claiming()
+
+    async def end_claiming(self):
+        self.is_active = False
+        button = self.children[0]
+        button.label = 'Claiming Ended'
+        button.style = discord.ButtonStyle.gray
+        button.disabled = True
+        button.emoji = '⏰'
+
+        embed = discord.Embed(
+            title="🏁 Point Drop Finished!",
+            description=f"**Final Results:**\n```\n🏆 {len(self.claimed_users)} Winners!\n💎 {len(self.claimed_users) * 10} Total Distributed\n```\nClaiming period has ended!",
+            color=discord.Color.blue()
+        )
+
+        try:
+            await self.message.edit(embed=embed, view=self)
+        except:
+            pass
+
+class GiftCardView(discord.ui.View):
+    def __init__(self, timeout=300):
+        super().__init__(timeout=timeout)
+
+    @discord.ui.select(
+        placeholder="🎁 Choose a gift card to redeem...",
+        options=[
+            discord.SelectOption(
+                label=f"{card['name']} - {cost} 💎",
+                description=f"Cost: {cost} Diamonds",
+                emoji=card['emoji'],
+                value=card_type
+            )
+            for card_type, card in GIFT_CARDS.items()
+            for cost in [card['cost']]
+        ]
+    )
+    async def select_gift_card(self, interaction: discord.Interaction, select: discord.ui.Select):
+        card_type = select.values[0]
+        card = GIFT_CARDS[card_type]
+        user_data = points_system.get_user_data(interaction.user.id)
+
+        if user_data['points'] < card['cost']:
+            embed = discord.Embed(
+                title="❌ Insufficient Diamonds",
+                description=f"You need {card['cost']} 💎 but only have {user_data['points']} 💎",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        # Deduct points
+        user_data['points'] -= card['cost']
+        user_data['total_spent'] += card['cost']
+        user_data['gift_cards_redeemed'].append({
+            'type': card_type,
+            'name': card['name'],
+            'cost': card['cost'],
+            'date': datetime.now().isoformat()
+        })
+
+        # Send DM to user
+        try:
+            dm_embed = discord.Embed(
+                title="🎉 Gift Card Redeemed Successfully!",
+                description=f"**{card['name']}** has been redeemed!\n\n**Details:**\n• Cost: {card['cost']} 💎\n• Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n• Remaining Diamonds: {user_data['points']} 💎",
+                color=discord.Color.green()
+            )
+            dm_embed.add_field(
+                name="📧 Next Steps",
+                value="An administrator will contact you within 24 hours to process your gift card delivery. Please keep this message for reference.",
+                inline=False
+            )
+            dm_embed.set_footer(text="Thank you for using our points system!")
+
+            await interaction.user.send(embed=dm_embed)
+            dm_sent = True
+        except:
+            dm_sent = False
+
+        # Store request for admin processing
+        points_system.data['gift_card_requests'][str(interaction.user.id)] = {
+            'user_id': interaction.user.id,
+            'username': interaction.user.display_name,
+            'card_type': card_type,
+            'card_name': card['name'],
+            'cost': card['cost'],
+            'timestamp': datetime.now().isoformat(),
+            'status': 'pending'
+        }
+
+        # Response embed
+        embed = discord.Embed(
+            title="✅ Gift Card Redeemed!",
+            description=f"Successfully redeemed **{card['name']}**!",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Cost", value=f"{card['cost']} 💎", inline=True)
+        embed.add_field(name="Remaining", value=f"{user_data['points']} 💎", inline=True)
+
+        if dm_sent:
+            embed.add_field(name="📧 Check DM", value="Details sent to your DM!", inline=False)
+        else:
+            embed.add_field(name="⚠️ DM Failed", value="Couldn't send DM. Please enable DMs from server members.", inline=False)
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await points_system.save_data()
+
+@bot.event
+async def on_ready():
+    print(f'{bot.user} has connected to Discord!')
+    print(f'Bot is in {len(bot.guilds)} guilds')
+
+    try:
+        synced = await bot.tree.sync()
+        print(f"Synced {len(synced)} command(s)")
+    except Exception as e:
+        print(f"Failed to sync commands: {e}")
+
+    auto_save.start()
+    auto_daily_claims.start()
+
+    # Send initial panels when bot starts
+    await send_startup_panels()
+
+@tasks.loop(minutes=5)
+async def auto_save():
+    await points_system.save_data()
+
+@tasks.loop(hours=24)
+async def auto_daily_claims():
+    daily_channel = bot.get_channel(CHANNELS['daily_claims'])
+    if not daily_channel:
+        print("Daily claims channel not found!")
+        return
+
+    # Clean old daily claim messages
+    await cleanup_old_messages(daily_channel, bot.user.id)
+
+    embed = discord.Embed(
+        title="💎 24H Daily Diamond Claim Refresh!",
+        description="**Daily Diamond Reward:**\n```\n╔═══════════╗\n║   💎 50   ║\n║  ╔═════╗  ║\n║  ║ ✨ ✨ ║  ║\n║  ╚═════╝  ║\n╚═══════════╝\n```\n**Fresh 24H claim period started!**\n\nClick the button below to claim your diamonds and maintain your streak!",
+        color=discord.Color.gold()
+    )
+    embed.add_field(name="💰 Base Reward", value="50 💎", inline=True)
+    embed.add_field(name="🔥 Streak Bonus", value="Up to 3x multiplier!", inline=True)
+    embed.add_field(name="⏰ Auto Refresh", value="Every 24 hours", inline=True)
+    embed.set_footer(text="🔄 24H Auto-refresh active")
+
+    view = DailyClaimView()
+    await daily_channel.send(embed=embed, view=view)
+
+async def cleanup_old_messages(channel, bot_user_id, limit=50):
+    """Remove old bot messages from a channel"""
+    try:
+        deleted_count = 0
+        async for message in channel.history(limit=limit):
+            if message.author.id == bot_user_id:
+                await message.delete()
+                deleted_count += 1
+                await asyncio.sleep(0.5)  # Rate limit protection
+        if deleted_count > 0:
+            print(f"🧹 Cleaned {deleted_count} old messages from #{channel.name}")
+    except Exception as e:
+        print(f"⚠️ Couldn't clean messages in #{channel.name}: {e}")
+
+async def send_startup_panels():
+    """Send all interactive panels when bot starts"""
+    await asyncio.sleep(10)  # Wait for bot to fully initialize
+
+    # Clean up old messages and send new ones
+    
+    # Daily claims panel - cleanup and send new
+    daily_channel = bot.get_channel(CHANNELS['daily_claims'])
+    if daily_channel:
+        await cleanup_old_messages(daily_channel, bot.user.id)
+        
+        embed = discord.Embed(
+            title="💎 24H Daily Diamond Claim Center",
+            description="**Daily Diamond Reward:**\n```\n╔═══════════╗\n║   💎 50   ║\n║  ╔═════╗  ║\n║  ║ ✨ ✨ ║  ║\n║  ╚═════╝  ║\n╚═══════════╝\n```\n**Your daily diamonds are ready!**\n\nClick the button below to claim your diamonds and maintain your streak!",
+            color=discord.Color.gold()
+        )
+        embed.add_field(name="💰 Base Reward", value="50 💎", inline=True)
+        embed.add_field(name="🔥 Streak Bonus", value="Up to 3x multiplier!", inline=True)
+        embed.add_field(name="⏰ Auto Refresh", value="Every 24 hours", inline=True)
+        embed.set_footer(text="🤖 Auto-started by bot")
+
+        view = DailyClaimView()
+        await daily_channel.send(embed=embed, view=view)
+        print("✅ Daily claim panel sent on startup")
+
+    # Leaderboard Panel - cleanup and send new
+    leaderboard_channel = bot.get_channel(CHANNELS['leaderboard'])
+    if leaderboard_channel:
+        await cleanup_old_messages(leaderboard_channel, bot.user.id)
+        
+        users_data = points_system.data['users']
+        sorted_users = sorted(users_data.items(), key=lambda x: x[1]['points'], reverse=True)[:10]
+
+        embed = discord.Embed(
+            title="🏆 24H Diamond Leaderboard",
+            description="**Top 10 Richest Players**\n```\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n```",
+            color=discord.Color.gold()
+        )
+
+        medals = ["🥇", "🥈", "🥉"]
+        trophy_design = ["👑", "💎", "⭐"]
+
+        for i, (user_id, data) in enumerate(sorted_users[:5], 1):  # Show top 5 on startup
+            try:
+                user = bot.get_user(int(user_id))
+                user_display = f"@{user.name}" if user else f"User {user_id}"
+            except:
+                user_display = f"User {user_id}"
+
+            if i <= 3:
+                position_emoji = medals[i-1]
+                decoration = trophy_design[i-1]
+            else:
+                position_emoji = f"{i}."
+                decoration = "💎"
+
+            embed.add_field(
+                name=f"{position_emoji} {user_display}",
+                value=f"{decoration} {data['points']:,} Diamonds\n🔥 {data['streak']} day streak",
+                inline=False
+            )
+
+        embed.set_footer(text="🤖 Auto-updated every 24H | Use /leaderboard for full list")
+        await leaderboard_channel.send(embed=embed)
+        print("✅ Leaderboard sent on startup")
+
+    # Send gambling panel (no cleanup needed as it's less frequent)
+    gambling_channel = bot.get_channel(CHANNELS['gambling'])
+    if gambling_channel:
+        embed = discord.Embed(
+            title="🎰 Diamond Casino - Gambling Hub",
+            description="**Welcome to the Casino!**\n```\n🎲 ╔═══════════╗ 🪙\n  ║  CASINO   ║\n  ║ ═════════ ║\n  ║ 💎 GAMES 💎 ║\n  ╚═══════════╝\n```\n**Available Games:**",
+            color=discord.Color.purple()
+        )
+        embed.add_field(name="🎲 Quick Dice", value="Guess 1-6 for 5x payout!\nFill form with number & bet", inline=True)
+        embed.add_field(name="🪙 Quick Flip", value="Heads or Tails for 2x payout!\nFill form with choice & bet", inline=True)
+        embed.add_field(name="💎 Risk & Reward", value="Higher risk = Higher rewards!", inline=False)
+        embed.set_footer(text="🎰 Good luck and gamble responsibly!")
+
+        view = GamblingView()
+        await gambling_channel.send(embed=embed, view=view)
+
+@auto_daily_claims.before_loop
+async def before_auto_daily_claims():
+    await bot.wait_until_ready()
+    # Calculate time until next midnight (00:00)
+    now = datetime.now()
+    next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    seconds_until_midnight = (next_midnight - now).total_seconds()
+    await asyncio.sleep(seconds_until_midnight)
+
+# Slash Commands
+@bot.tree.command(name="claim_daily", description="Claim your daily reward and streak bonus")
+async def claim_daily(interaction: discord.Interaction):
+    if interaction.channel_id != CHANNELS['daily_claims']:
+        embed = discord.Embed(
+            title="❌ Wrong Channel",
+            description=f"Please use this command in <#{CHANNELS['daily_claims']}>",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    user_data = points_system.get_user_data(interaction.user.id)
+    now = datetime.now()
+
+    if user_data['last_claim']:
+        last_claim = datetime.fromisoformat(user_data['last_claim'])
+        time_diff = now - last_claim
+
+        if time_diff < timedelta(hours=24):
+            next_claim = last_claim + timedelta(hours=24)
+            embed = discord.Embed(
+                title="⏰ Daily Claim Cooldown",
+                description=f"You can claim again <t:{int(next_claim.timestamp())}:R>",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        if time_diff <= timedelta(hours=36):
+            user_data['streak'] += 1
+        else:
+            user_data['streak'] = 1
+    else:
+        user_data['streak'] = 1
+
+    base_reward = points_system.data['settings']['daily_reward']
+    multiplier = points_system.calculate_streak_multiplier(user_data['streak'])
+    total_reward = int(base_reward * multiplier)
+
+    user_data['points'] += total_reward
+    user_data['total_earned'] += total_reward
+    user_data['last_claim'] = now.isoformat()
+
+    embed = discord.Embed(
+        title="💎 Daily Diamond Claim!",
+        description=f"**Reward:** {total_reward} 💎\n{interaction.user.mention} claimed their daily diamonds!",
+        color=discord.Color.gold()
+    )
+    embed.add_field(name="💰 Reward", value=f"{total_reward} 💎", inline=True)
+    embed.add_field(name="🔥 Streak", value=f"{user_data['streak']} days", inline=True)
+    embed.add_field(name="📈 Multiplier", value=f"{multiplier:.1f}x", inline=True)
+
+    await interaction.response.send_message(embed=embed)
+    await points_system.save_data()
+
+@bot.tree.command(name="get_points", description="Check your points or another user's points")
+async def get_points(interaction: discord.Interaction, user: discord.Member = None):
+    if interaction.channel_id != CHANNELS['transfers']:
+        embed = discord.Embed(
+            title="❌ Wrong Channel",
+            description=f"Please use this command in <#{CHANNELS['transfers']}>",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    target_user = user or interaction.user
+    user_data = points_system.get_user_data(target_user.id)
+
+    embed = discord.Embed(
+        title=f"💎 {target_user.display_name}'s Points",
+        description=f"**3D Wallet:**\n```\n╔══════════════╗\n║ 💎 {user_data['points']:,} Diamonds ║\n║══════════════║\n║ 🔥 {user_data['streak']} Day Streak ║\n╚══════════════╝\n```",
+        color=discord.Color.blue()
+    )
+    embed.add_field(name="📊 Total Earned", value=f"{user_data['total_earned']:,} 💎", inline=True)
+    embed.add_field(name="💸 Total Spent", value=f"{user_data['total_spent']:,} 💎", inline=True)
+    embed.add_field(name="🎁 Gift Cards", value=f"{len(user_data.get('gift_cards_redeemed', []))}", inline=True)
+
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="transfer_points", description="Send points to another user")
+async def transfer_points(interaction: discord.Interaction, recipient: discord.Member, amount: int):
+    if interaction.channel_id != CHANNELS['transfers']:
+        embed = discord.Embed(
+            title="❌ Wrong Channel",
+            description=f"Please use this command in <#{CHANNELS['transfers']}>",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    if amount <= 0:
+        await interaction.response.send_message("❌ Amount must be positive!", ephemeral=True)
+        return
+
+    if recipient.id == interaction.user.id:
+        await interaction.response.send_message("❌ You can't transfer points to yourself!", ephemeral=True)
+        return
+
+    sender_data = points_system.get_user_data(interaction.user.id)
+
+    if sender_data['points'] < amount:
+        await interaction.response.send_message(f"❌ Insufficient points! You have {sender_data['points']} Diamonds.", ephemeral=True)
+        return
+
+    recipient_data = points_system.get_user_data(recipient.id)
+
+    sender_data['points'] -= amount
+    sender_data['total_spent'] += amount
+    recipient_data['points'] += amount
+    recipient_data['total_earned'] += amount
+
+    embed = discord.Embed(
+        title="💸 Points Transferred!",
+        description=f"**3D Transfer Animation:**\n```\n{interaction.user.display_name[:8]}\n    ↓ {amount} 💎\n{recipient.display_name[:8]}\n```\nTransfer complete!",
+        color=discord.Color.green()
+    )
+
+    await interaction.response.send_message(embed=embed)
+    await points_system.save_data()
+
+@bot.tree.command(name="gambling_menu", description="Access the 3D gambling menu with all game options")
+async def gambling_menu(interaction: discord.Interaction):
+    if interaction.channel_id != CHANNELS['gambling']:
+        embed = discord.Embed(
+            title="❌ Wrong Channel",
+            description=f"Please use this command in <#{CHANNELS['gambling']}>",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    user_data = points_system.get_user_data(interaction.user.id)
+
+    embed = discord.Embed(
+        title="🎰 3D Casino Menu",
+        description=f"**Welcome to the Diamond Casino!**\n```\n    🎰 CASINO 🎰\n  ╔═══════════════╗\n  ║ 🎲  🪙  🎰 ║\n  ║ Dice Coin Slot ║\n  ╚═══════════════╝\n```\n**Your Balance:** {user_data['points']} 💎\n\nClick a button below to learn about each game!",
+        color=discord.Color.purple()
+    )
+
+    view = GamblingView()
+    await interaction.response.send_message(embed=embed, view=view)
+
+@bot.tree.command(name="redeem_gift_card", description="Convert your diamonds to gift cards")
+async def redeem_gift_card(interaction: discord.Interaction):
+    user_data = points_system.get_user_data(interaction.user.id)
+
+    embed = discord.Embed(
+        title="🎁 Gift Card Redemption Center",
+        description=f"**Your Balance:** {user_data['points']} 💎\n\n**Available Gift Cards:**\n\n```\n🎁 GIFT CARD STORE 🎁\n╔══════════════════╗\n║ Choose your reward! ║\n╚══════════════════╝\n```\nSelect a gift card from the dropdown below:",
+        color=discord.Color.gold()
+    )
+
+    # Show available gift cards
+    for card_type, card in GIFT_CARDS.items():
+        affordable = "✅" if user_data['points'] >= card['cost'] else "❌"
+        embed.add_field(
+            name=f"{card['emoji']} {card['name']}",
+            value=f"{affordable} {card['cost']} 💎",
+            inline=True
+        )
+
+    view = GiftCardView()
+    await interaction.response.send_message(embed=embed, view=view)
+
+@bot.tree.command(name="leaderboard", description="View the points leaderboard")
+async def leaderboard(interaction: discord.Interaction):
+    # Allow leaderboard in both leaderboard channel and general (if set)
+    allowed_channels = [CHANNELS['leaderboard']]
+    if CHANNELS.get('general'):
+        allowed_channels.append(CHANNELS['general'])
+
+    if interaction.channel_id not in allowed_channels:
+        embed = discord.Embed(
+            title="❌ Wrong Channel",
+            description=f"Please use this command in <#{CHANNELS['leaderboard']}>" + 
+                       (f" or <#{CHANNELS['general']}>" if CHANNELS.get('general') else ""),
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    users_data = points_system.data['users']
+    sorted_users = sorted(users_data.items(), key=lambda x: x[1]['points'], reverse=True)[:10]
+
+    embed = discord.Embed(
+        title="🏆 3D Diamond Leaderboard",
+        description="**Top 10 Richest Players**\n```\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n```",
+        color=discord.Color.gold()
+    )
+
+    medals = ["🥇", "🥈", "🥉"]
+    trophy_design = ["👑", "💎", "⭐"]
+
+    for i, (user_id, data) in enumerate(sorted_users, 1):
+        try:
+            user = bot.get_user(int(user_id))
+            user_display = f"@{user.name}" if user else f"User {user_id}"
+        except:
+            user_display = f"User {user_id}"
+
+        if i <= 3:
+            position_emoji = medals[i-1]
+            decoration = trophy_design[i-1]
+        else:
+            position_emoji = f"{i}."
+            decoration = "💎"
+
+        embed.add_field(
+            name=f"{position_emoji} {user_display}",
+            value=f"{decoration} {data['points']:,} Diamonds\n🔥 {data['streak']} day streak",
+            inline=False
+        )
+
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="drop_points", description="Admin: Start a point drop session")
+@commands.has_permissions(administrator=True)
+async def drop_points(interaction: discord.Interaction):
+    drop_channel = bot.get_channel(CHANNELS['point_drops'])
+    if not drop_channel:
+        await interaction.response.send_message("❌ Point drops channel not found!", ephemeral=True)
+        return
+
+    embed = discord.Embed(
+        title="⏳ Admin Point Drop Starting!",
+        description="**3D Drop Preview:**\n```\n     💎💎💎\n    ╱ ╲ ╱ ╲\n   ╱   ╲   ╲\n  ╱_____╲___╲\n```\nGet ready! Claiming starts in 5 minutes!",
+        color=discord.Color.orange()
+    )
+    embed.set_footer(text=f"Triggered by {interaction.user.display_name}")
+
+    view = PointDropView(timeout=360)
+    message = await drop_channel.send(embed=embed, view=view)
+    asyncio.create_task(view.start_countdown(message))
+
+    await interaction.response.send_message(f"✅ Point drop session started in <#{CHANNELS['point_drops']}>!", ephemeral=True)
+
+@bot.tree.command(name="send_daily_claim", description="Admin: Manually send daily claim button to channel")
+@commands.has_permissions(administrator=True)
+async def send_daily_claim(interaction: discord.Interaction):
+    daily_channel = bot.get_channel(CHANNELS['daily_claims'])
+    if not daily_channel:
+        await interaction.response.send_message("❌ Daily claims channel not found!", ephemeral=True)
+        return
+
+    # Clean old daily claim messages before sending new one
+    await cleanup_old_messages(daily_channel, bot.user.id)
+
+    embed = discord.Embed(
+        title="💎 Daily Diamond Claim Available!",
+        description="**Daily Diamond Reward:**\n```\n╔═══════════╗\n║   💎 50   ║\n║  ╔═════╗  ║\n║  ║ ✨ ✨ ║  ║\n║  ╚═════╝  ║\n╚═══════════╝\n```\n**Your daily diamonds are ready!**\n\nClick the button below to claim your diamonds and maintain your streak!",
+        color=discord.Color.gold()
+    )
+    embed.add_field(name="💰 Base Reward", value="50 💎", inline=True)
+    embed.add_field(name="🔥 Streak Bonus", value="Up to 3x multiplier!", inline=True)
+    embed.add_field(name="⏰ Manual Trigger", value="Admin activated", inline=True)
+    embed.set_footer(text=f"Triggered by {interaction.user.display_name}")
+
+    view = DailyClaimView()
+    await daily_channel.send(embed=embed, view=view)
+    await interaction.response.send_message(f"✅ Daily claim button sent to <#{CHANNELS['daily_claims']}>!", ephemeral=True)
+
+# Run the bot
+if __name__ == "__main__":
+    bot_token = os.getenv('DISCORD_BOT_TOKEN')
+    if not bot_token:
+        print("❌ Error: DISCORD_BOT_TOKEN not found in environment variables!")
+        print("Please add your bot token in the Secrets tab (🔒 icon in sidebar)")
+        print("Key: DISCORD_BOT_TOKEN")
+        print("Value: Your Discord bot token")
+        exit(1)
+
+    print("🤖 Starting Discord Points Bot...")
+    try:
+        bot.run(bot_token)
+    except Exception as e:
+        print(f"❌ Failed to start bot: {e}")
+        print("Please check your bot token and internet connection.")
