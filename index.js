@@ -641,7 +641,17 @@ async function handleDiceGame(interaction) {
             .setColor(0xFF0000);
     }
 
-    await interaction.reply({ embeds: [embed] });
+    const reply = await interaction.reply({ embeds: [embed] });
+
+    // Auto-delete the result message after 3 minutes
+    setTimeout(async () => {
+        try {
+            await reply.delete();
+        } catch (error) {
+            console.log('Could not delete gambling result message:', error.message);
+        }
+    }, 3 * 60 * 1000); // 3 minutes
+
     await pointsSystem.saveData();
 }
 
@@ -700,7 +710,17 @@ async function handleCoinflipGame(interaction) {
             .setColor(0xFF0000);
     }
 
-    await interaction.reply({ embeds: [embed] });
+    const reply = await interaction.reply({ embeds: [embed] });
+
+    // Auto-delete the result message after 3 minutes
+    setTimeout(async () => {
+        try {
+            await reply.delete();
+        } catch (error) {
+            console.log('Could not delete coinflip result message:', error.message);
+        }
+    }, 3 * 60 * 1000); // 3 minutes
+
     await pointsSystem.saveData();
 }
 
@@ -761,7 +781,17 @@ async function handleSlotsGame(interaction) {
             .setColor(0xFF0000);
     }
 
-    await interaction.reply({ embeds: [embed] });
+    const reply = await interaction.reply({ embeds: [embed] });
+
+    // Auto-delete the result message after 3 minutes
+    setTimeout(async () => {
+        try {
+            await reply.delete();
+        } catch (error) {
+            console.log('Could not delete slots result message:', error.message);
+        }
+    }, 3 * 60 * 1000); // 3 minutes
+
     await pointsSystem.saveData();
 }
 
@@ -797,72 +827,7 @@ async function handleRedeemGiftCard(interaction) {
         .setColor(0xFFD700);
 
     // Show available gift cards
-    Object.entries(GIFT_CARDS).forEach(([type, card]) => {
-        const affordable = userData.points >= card.cost ? '✅' : '❌';
-        embed.addFields({ name: `${card.emoji} ${card.name}`, value: `${affordable} ${card.cost} 💎`, inline: true });
-    });
-
-    const component = createGiftCardSelect();
-    await interaction.reply({ embeds: [embed], components: [component] });
-}
-
-async function handleGiftCardSelection(interaction) {
-    const cardType = interaction.values[0];
-    const card = GIFT_CARDS[cardType];
-    const userData = pointsSystem.getUserData(interaction.user.id);
-
-    if (userData.points < card.cost) {
-        const embed = new EmbedBuilder()
-            .setTitle('❌ Insufficient Diamonds')
-            .setDescription(`You need ${card.cost} 💎 but only have ${userData.points} 💎`)
-            .setColor(0xFF0000);
-        return await interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-
-    // Deduct points and process gift card
-    userData.points -= card.cost;
-    userData.total_spent += card.cost;
-
-    // Create gift card request
-    const requestId = `gc_${Date.now()}_${interaction.user.id}`;
-    pointsSystem.data.gift_card_requests[requestId] = {
-        userId: interaction.user.id,
-        username: interaction.user.username,
-        cardType: cardType,
-        cardName: card.name,
-        cost: card.cost,
-        timestamp: new Date().toISOString(),
-        status: 'pending'
-    };
-
-    const embed = new EmbedBuilder()
-        .setTitle('🎁 Gift Card Purchase Successful!')
-        .setDescription(`**${card.name}** purchased for ${card.cost} 💎\n\n**Request ID:** \`${requestId}\`\n\nYour gift card request has been submitted! An admin will process it soon.`)
-        .addFields(
-            { name: '💰 New Balance', value: `${userData.points} 💎`, inline: true },
-            { name: '📊 Total Spent', value: `${userData.total_spent} 💎`, inline: true }
-        )
-        .setColor(0x00FF00);
-
-    await interaction.update({ embeds: [embed], components: [] });
-    await pointsSystem.saveData();
-}
-
-async function handleLeaderboard(interaction) {
-    if (interaction.channelId !== CHANNELS.leaderboard && interaction.channelId !== CHANNELS.general) {
-        const embed = new EmbedBuilder()
-            .setTitle('❌ Wrong Channel')
-            .setDescription(`Please use this command in <#${CHANNELS.leaderboard}>`)
-            .setColor(0xFF0000);
-        return await interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-
-    const sortedUsers = Object.entries(pointsSystem.data.users)
-        .sort(([,a], [,b]) => b.points - a.points);
-
-    const embed = new EmbedBuilder()
-        .setTitle('🏆 Diamond Points Leaderboard')
-        .setDescription('**Top Diamond Elites:**\n```\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n```')
+    Object.entries(G\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n```')
         .setColor(0xFFD700);
 
     const medals = ['🥇', '🥈', '🥉'];
