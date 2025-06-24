@@ -22,6 +22,7 @@ const CHANNELS = {
     transfers: '1387023571368415292',
     gambling: '1387023670634872873',
     gift_cards: '1387023764012797972', // Gift Card Redemption Center
+    gift_card_verification: '1387119676961849464', // Gift Card Verification Panel
     general: null // Can be set to allow leaderboard from general channel
 };
 
@@ -434,6 +435,13 @@ async function handleButtonInteraction(interaction) {
                 await handleConfirmConvertBack(interaction);
                 break;
             case 'check_gift_card':
+                if (interaction.channelId !== CHANNELS.gift_cards && interaction.channelId !== CHANNELS.gift_card_verification) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('❌ Wrong Channel')
+                        .setDescription(`Please use this button in <#${CHANNELS.gift_cards}> or <#${CHANNELS.gift_card_verification}>`)
+                        .setColor(0xFF0000);
+                    return await interaction.reply({ embeds: [embed], ephemeral: true });
+                }
                 await showGiftCardCheckModal(interaction);
                 break;
             case 'generate_gift_card':
@@ -1299,10 +1307,10 @@ async function handleGiftCardGeneration(interaction) {
 }
 
 async function handleCheckGiftCard(interaction) {
-    if (interaction.channelId !== CHANNELS.gift_cards) {
+    if (interaction.channelId !== CHANNELS.gift_cards && interaction.channelId !== CHANNELS.gift_card_verification) {
         const embed = new EmbedBuilder()
             .setTitle('❌ Wrong Channel')
-            .setDescription(`Please use this command in <#${CHANNELS.gift_cards}>`)
+            .setDescription(`Please use this command in <#${CHANNELS.gift_cards}> or <#${CHANNELS.gift_card_verification}>`)
             .setColor(0xFF0000);
         return await interaction.reply({ embeds: [embed], ephemeral: true });
     }
@@ -1500,8 +1508,7 @@ async function sendLeaderboardPanel() {
 
         const embed = new EmbedBuilder()
             .setTitle('🏆 Diamond Points Leaderboard')
-            .setDescription('**Top Diamond Elites:**\n```\n
-    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n```')
+            .setDescription('**Top Diamond Elites:**\n```\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n```')
             .setColor(0xFFD700);
 
         const medals = ['🥇', '🥈', '🥉'];
