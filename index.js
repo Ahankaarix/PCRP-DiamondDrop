@@ -3820,6 +3820,57 @@ async function handleUnoTicketCancel(interaction, ticketId) {
     }, 10000);
 }
 
+async function showUserCommands(interaction) {
+    const embed = new EmbedBuilder()
+        .setTitle("👥 User Commands - Diamond Bot")
+        .setDescription("**Available Commands for All Users:**")
+        .addFields(
+            {
+                name: "💎 Daily & Points Commands",
+                value: "`/claim_daily` - Claim daily diamonds (streak bonus)\n`/get_points [user]` - Check points balance\n`/transfer_points <user> <amount>` - Send diamonds to others",
+                inline: false,
+            },
+            {
+                name: "🎲 Gaming Commands",
+                value: "`/gambling_menu` - Access casino games\n• Dice Game (5x multiplier)\n• Coinflip (2x multiplier)\n• Lucky Slots (up to 12x)",
+                inline: false,
+            },
+            {
+                name: "🎁 Gift Card Commands",
+                value: "`/redeem_gift_card` - Legacy gift card system\n`/convert_points` - Same as redeem gift card\n`/generate_gift_card <amount>` - Create gift cards\n`/check_gift_card <code>` - Verify gift card status",
+                inline: false,
+            },
+            {
+                name: "🏆 Information Commands",
+                value: "`/leaderboard` - View top 10 users\n`/test_dm` - Test if bot can DM you\n`/info` - Show this information panel",
+                inline: false,
+            },
+            {
+                name: "📍 Channel Locations",
+                value: `💎 Daily Claims: <#${CHANNELS.daily_claims}>\n🎲 Gambling: <#${CHANNELS.gambling}>\n🎁 Gift Cards: <#${CHANNELS.gift_cards}>\n🔍 Verification: <#${CHANNELS.gift_card_verification}>\n📊 Transfers: <#${CHANNELS.transfers}>\n🏆 Leaderboard: <#${CHANNELS.leaderboard}>`,
+                inline: false,
+            },
+        )
+        .setColor(0x00ff00);
+
+    const reply = await interaction.reply({ embeds: [embed], ephemeral: true });
+
+    // Auto-delete the user commands information after 5 minutes
+    setTimeout(
+        async () => {
+            try {
+                await reply.delete();
+            } catch (error) {
+                console.log(
+                    "Could not delete user commands information:",
+                    error.message,
+                );
+            }
+        },
+        5 * 60 * 1000,
+    ); // 5 minutes
+}
+
                     "Could not delete user commands information:",
                     error.message,
                 );
