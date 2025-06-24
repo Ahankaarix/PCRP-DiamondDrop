@@ -3010,7 +3010,11 @@ async function sendPointDropTicketPanel() {
 
 // Startup functions
 async function sendStartupPanels() {
+    console.log("🚀 Bot startup sequence initiated...");
+    console.log("🧹 Phase 1: Complete channel cleanup");
     await cleanupOldPanels();
+    
+    console.log("📋 Phase 2: Deploying fresh panels");
     await sendDailyClaimPanel();
     await sendGamblingPanel();
     await sendGiftCardPanel();
@@ -3018,6 +3022,8 @@ async function sendStartupPanels() {
     await sendInfoPanel();
     await sendAdminGiftCardPanel();
     await sendPointDropTicketPanel();
+    
+    console.log("✅ Bot startup sequence completed - All systems fresh and operational!");
 }
 
 async function sendDailyClaimPanel() {
@@ -3159,7 +3165,9 @@ async function sendAdminGiftCardPanel() {
 }
 
 async function cleanupOldPanels() {
-    // Function to cleanup old bot messages to prevent duplicates
+    // Function to cleanup ALL bot messages from ALL channels for fresh start
+    console.log("🧹 Starting comprehensive channel cleanup...");
+    
     const channels = [
         CHANNELS.daily_claims,
         CHANNELS.gambling,
@@ -3174,21 +3182,41 @@ async function cleanupOldPanels() {
         const channel = client.channels.cache.get(channelId);
         if (channel) {
             try {
-                const messages = await channel.messages.fetch({ limit: 10 });
-                const botMessages = messages.filter(
-                    (msg) => msg.author.id === client.user.id,
-                );
-                if (botMessages.size > 0) {
-                    await channel.bulkDelete(botMessages);
-                }
+                console.log(`🧹 Cleaning channel: ${channel.name || channelId}`);
+                
+                // Fetch more messages to ensure complete cleanup
+                let fetched;
+                do {
+                    fetched = await channel.messages.fetch({ limit: 100 });
+                    const botMessages = fetched.filter(
+                        (msg) => msg.author.id === client.user.id,
+                    );
+                    
+                    if (botMessages.size > 0) {
+                        // Split into chunks of 100 for bulk delete (Discord limit)
+                        const messageArray = Array.from(botMessages.values());
+                        for (let i = 0; i < messageArray.length; i += 100) {
+                            const chunk = messageArray.slice(i, i + 100);
+                            if (chunk.length > 1) {
+                                await channel.bulkDelete(chunk);
+                            } else if (chunk.length === 1) {
+                                await chunk[0].delete();
+                            }
+                        }
+                        console.log(`✅ Deleted ${botMessages.size} bot messages from ${channel.name || channelId}`);
+                    }
+                } while (fetched.size === 100); // Continue if we got a full batch
+                
             } catch (error) {
                 console.log(
-                    `Could not cleanup channel ${channelId}:`,
+                    `❌ Could not cleanup channel ${channelId}:`,
                     error.message,
                 );
             }
         }
     }
+    
+    console.log("✅ Channel cleanup completed - All channels are now fresh!");
 }
 
 // With this (hardcoded, as requested):
