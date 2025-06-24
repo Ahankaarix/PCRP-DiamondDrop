@@ -820,49 +820,7 @@ async function handleGiftCardSelection(interaction) {
     }
 
     // Deduct points and process gift card
-    userData.points -= card.cost;
-    userData.total_spent += card.cost;
-
-    // Create gift card request
-    const requestId = `gc_${Date.now()}_${interaction.user.id}`;
-    pointsSystem.data.gift_card_requests[requestId] = {
-        userId: interaction.user.id,
-        username: interaction.user.username,
-        cardType: cardType,
-        cardName: card.name,
-        cost: card.cost,
-        timestamp: new Date().toISOString(),
-        status: 'pending'
-    };
-
-    const embed = new EmbedBuilder()
-        .setTitle('🎁 Gift Card Purchase Successful!')
-        .setDescription(`**${card.name}** purchased for ${card.cost} 💎\n\n**Request ID:** \`${requestId}\`\n\nYour gift card request has been submitted! An admin will process it soon.`)
-        .addFields(
-            { name: '💰 New Balance', value: `${userData.points} 💎`, inline: true },
-            { name: '📊 Total Spent', value: `${userData.total_spent} 💎`, inline: true }
-        )
-        .setColor(0x00FF00);
-
-    await interaction.update({ embeds: [embed], components: [] });
-    await pointsSystem.saveData();
-}
-
-async function handleLeaderboard(interaction) {
-    if (interaction.channelId !== CHANNELS.leaderboard && interaction.channelId !== CHANNELS.general) {
-        const embed = new EmbedBuilder()
-            .setTitle('❌ Wrong Channel')
-            .setDescription(`Please use this command in <#${CHANNELS.leaderboard}>`)
-            .setColor(0xFF0000);
-        return await interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-
-    const sortedUsers = Object.entries(pointsSystem.data.users)
-        .sort(([,a], [,b]) => b.points - a.points);
-
-    const embed = new EmbedBuilder()
-        .setTitle('🏆 Diamond Points Leaderboard')
-        .setDescription('**Top Diamond Elites:**\n```\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n```')
+    userData.points -= card\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n```')
         .setColor(0xFFD700);
 
     const medals = ['🥇', '🥈', '🥉'];
@@ -1032,57 +990,4 @@ async function sendLeaderboardPanel() {
 
         const embed = new EmbedBuilder()
             .setTitle('🏆 Diamond Points Leaderboard')
-            .setDescription('**Top Diamond Elites:**\n```\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n```')
-            .setColor(0xFFD700);
-
-        const medals = ['🥇', '🥈', '🥉'];
-        const trophyDesign = ['👑', '💎', '⭐'];
-
-        for (let i = 0; i < Math.min(sortedUsers.length, 10); i++) {
-            const [userId, data] = sortedUsers[i];
-            let userDisplay;
-
-            try {
-                const user = await client.users.fetch(userId);
-                userDisplay = `@${user.username}`;
-            } catch {
-                userDisplay = `User ${userId}`;
-            }
-
-            const position = i + 1;
-            const positionEmoji = position <= 3 ? medals[position - 1] : `${position}.`;
-            const decoration = position <= 3 ? trophyDesign[position - 1] : '💎';
-
-            embed.addFields({
-                name: `${positionEmoji} ${userDisplay}`,
-                value: `${decoration} ${data.points.toLocaleString()} Diamonds\n🔥 ${data.streak} day streak`,
-                inline: false
-            });
-        }
-
-        await leaderboardChannel.send({ embeds: [embed] });
-        console.log('✅ Leaderboard panel sent');
-    }
-}
-
-async function cleanupOldPanels() {
-    // Function to cleanup old bot messages to prevent duplicates
-    const channels = [CHANNELS.daily_claims, CHANNELS.gambling, CHANNELS.gift_cards, CHANNELS.leaderboard];
-
-    for (const channelId of channels) {
-        const channel = client.channels.cache.get(channelId);
-        if (channel) {
-            try {
-                const messages = await channel.messages.fetch({ limit: 10 });
-                const botMessages = messages.filter(msg => msg.author.id === client.user.id);
-                if (botMessages.size > 0) {
-                    await channel.bulkDelete(botMessages);
-                }
-            } catch (error) {
-                console.log(`Could not cleanup channel ${channelId}:`, error.message);
-            }
-        }
-    }
-}
-
-client.login(process.env.DISCORD_BOT_TOKEN);
+            .setDescription('**Top Diamond Elites:**\n```\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n
