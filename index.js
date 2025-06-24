@@ -30,6 +30,14 @@ const GIFT_CARDS = {
     pcrp: { name: 'PCRP Gift Card', cost: 500, emoji: '🎁' }
 };
 
+// Gift card generation settings
+const GIFT_CARD_SETTINGS = {
+    min_conversion: 500,
+    max_conversion: 100000,
+    validity_days: 7,
+    code_length: 12
+};
+
 class PointsBot {
     constructor() {
         this.data = {
@@ -40,7 +48,8 @@ class PointsBot {
                 conversion_rate: 100,
                 drop_channel_id: null
             },
-            gift_card_requests: {}
+            gift_card_requests: {},
+            generated_gift_cards: {} // Store generated gift cards
         };
         this.loadData();
     }
@@ -88,12 +97,35 @@ class PointsBot {
         const maxMultiplier = this.data.settings.max_streak_multiplier;
         return Math.min(1 + (streak * 0.1), maxMultiplier);
     }
+
+    generateGiftCardCode() {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        let result = 'GC-';
+        for (let i = 0; i < GIFT_CARD_SETTINGS.code_length; i++) {
+            result += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return result;
+    }
+
+    cleanupExpiredGiftCards() {
+        const now = new Date();
+        for (const [code, card] of Object.entries(this.data.generated_gift_cards)) {
+            const expiryDate = new Date(card.created_at);
+            expiryDate.setDate(expiryDate.getDate() + GIFT_CARD_SETTINGS.validity_days);
+            
+            if (now > expiryDate && card.status === 'valid') {
+                card.status = 'void';
+                card.void_reason = 'expired';
+            }
+        }
+    }
 }
 
 const pointsSystem = new PointsBot();
 
-// Auto-save every 5 minutes
+// Auto-save every 5 minutes and cleanup expired gift cards
 setInterval(async () => {
+    pointsSystem.cleanupExpiredGiftCards();
     await pointsSystem.saveData();
 }, 5 * 60 * 1000);
 
@@ -159,7 +191,7 @@ function createGiftCardSelect() {
 }
 
 function createGiftCardPanelButtons() {
-    return new ActionRowBuilder()
+    const row1 = new ActionRowBuilder()
         .addComponents(
             new ButtonBuilder()
                 .setCustomId('open_gift_ticket')
@@ -170,8 +202,24 @@ function createGiftCardPanelButtons() {
                 .setCustomId('dm_test_button')
                 .setLabel('📧 Test DM')
                 .setStyle(ButtonStyle.Secondary)
-                .setEmoji('🔔')
+                .setEmoji('🔔'),
+            new ButtonBuilder()
+                .setCustomId('check_gift_card')
+                .setLabel('🔘 Check Gift Card')
+                .setStyle(ButtonStyle.Success)
+                .setEmoji('🔍')
         );
+
+    const row2 = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('generate_gift_card')
+                .setLabel('💎 Generate Gift Card')
+                .setStyle(ButtonStyle.Primary)
+                .setEmoji('🎁')
+        );
+
+    return [row1, row2];
 }
 
 // Event handlers
@@ -246,7 +294,27 @@ client.once('ready', async () => {
         new SlashCommandBuilder()
             .setName('send_gift_card_panel')
             .setDescription('Admin: Send the gift card redemption panel')
-            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+        new SlashCommandBuilder()
+            .setName('check_gift_card')
+            .setDescription('Check the status of a gift card')
+            .addStringOption(option =>
+                option.setName('code')
+                    .setDescription('Gift card code to check')
+                    .setRequired(true)
+            ),
+
+        new SlashCommandBuilder()
+            .setName('generate_gift_card')
+            .setDescription('Convert diamonds to a gift card')
+            .addIntegerOption(option =>
+                option.setName('amount')
+                    .setDescription('Amount of diamonds to convert (500-100000)')
+                    .setRequired(true)
+                    .setMinValue(500)
+                    .setMaxValue(100000)
+            )
     ];
 
     try {
@@ -314,6 +382,12 @@ async function handleSlashCommand(interaction) {
             case 'send_gift_card_panel':
                 await handleSendGiftCardPanel(interaction);
                 break;
+            case 'check_gift_card':
+                await handleCheckGiftCard(interaction);
+                break;
+            case 'generate_gift_card':
+                await handleGenerateGiftCard(interaction);
+                break;
         }
     } catch (error) {
         console.error('Error handling slash command:', error);
@@ -359,6 +433,12 @@ async function handleButtonInteraction(interaction) {
             case 'confirm_convert_back':
                 await handleConfirmConvertBack(interaction);
                 break;
+            case 'check_gift_card':
+                await showGiftCardCheckModal(interaction);
+                break;
+            case 'generate_gift_card':
+                await showGenerateGiftCardModal(interaction);
+                break;
         }
     } catch (error) {
         console.error('Error handling button interaction:', error);
@@ -379,6 +459,10 @@ async function handleModalSubmit(interaction) {
             await handleDiceGame(interaction);
         } else if (customId === 'coinflip_modal') {
             await handleCoinflipGame(interaction);
+        } else if (customId === 'gift_card_check_modal') {
+            await handleGiftCardCheck(interaction);
+        } else if (customId === 'gift_card_generate_modal') {
+            await handleGiftCardGeneration(interaction);
         }
     } catch (error) {
         console.error('Error handling modal submit:', error);
@@ -1020,6 +1104,343 @@ async function handleConfirmConvertBack(interaction) {
     await interaction.reply({ embeds: [embed], ephemeral: true });
 }
 
+async function showGiftCardCheckModal(interaction) {
+    const modal = new ModalBuilder()
+        .setCustomId('gift_card_check_modal')
+        .setTitle('🔍 Check Gift Card Status');
+
+    const codeInput = new TextInputBuilder()
+        .setCustomId('gift_card_code')
+        .setLabel('Gift Card Code')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Enter gift card code (e.g., GC-ABCD1234EFGH)')
+        .setRequired(true)
+        .setMaxLength(20);
+
+    modal.addComponents(
+        new ActionRowBuilder().addComponents(codeInput)
+    );
+
+    await interaction.showModal(modal);
+}
+
+async function showGenerateGiftCardModal(interaction) {
+    const modal = new ModalBuilder()
+        .setCustomId('gift_card_generate_modal')
+        .setTitle('💎 Generate Gift Card');
+
+    const amountInput = new TextInputBuilder()
+        .setCustomId('diamond_amount')
+        .setLabel('Diamond Amount (500-100,000)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Enter amount of diamonds to convert...')
+        .setRequired(true)
+        .setMaxLength(6);
+
+    modal.addComponents(
+        new ActionRowBuilder().addComponents(amountInput)
+    );
+
+    await interaction.showModal(modal);
+}
+
+async function handleGiftCardCheck(interaction) {
+    const giftCardCode = interaction.fields.getTextInputValue('gift_card_code').trim().toUpperCase();
+
+    // Clean up expired cards first
+    pointsSystem.cleanupExpiredGiftCards();
+
+    const giftCard = pointsSystem.data.generated_gift_cards[giftCardCode];
+
+    let embed;
+    if (!giftCard) {
+        embed = new EmbedBuilder()
+            .setTitle('❌ Invalid Gift Card')
+            .setDescription(`**Gift Card Code:** \`${giftCardCode}\`\n\n**Status:** ❌ **Invalid**\n\nThis gift card code does not exist in our system.`)
+            .setColor(0xFF0000);
+    } else {
+        const createdDate = new Date(giftCard.created_at);
+        const expiryDate = new Date(createdDate);
+        expiryDate.setDate(expiryDate.getDate() + GIFT_CARD_SETTINGS.validity_days);
+
+        let statusEmoji, statusText, statusColor;
+        let claimedInfo = '';
+
+        switch (giftCard.status) {
+            case 'valid':
+                statusEmoji = '✅';
+                statusText = 'Valid';
+                statusColor = 0x00FF00;
+                break;
+            case 'claimed':
+                statusEmoji = '🟡';
+                statusText = 'Claimed';
+                statusColor = 0xFFFF00;
+                if (giftCard.claimed_by) {
+                    try {
+                        const user = await client.users.fetch(giftCard.claimed_by);
+                        claimedInfo = `\n**Claimed by:** @${user.username}\n**Claimed on:** <t:${Math.floor(new Date(giftCard.claimed_at).getTime() / 1000)}:F>`;
+                    } catch {
+                        claimedInfo = `\n**Claimed by:** User ${giftCard.claimed_by}\n**Claimed on:** <t:${Math.floor(new Date(giftCard.claimed_at).getTime() / 1000)}:F>`;
+                    }
+                }
+                break;
+            case 'void':
+                statusEmoji = '❌';
+                statusText = 'Void';
+                statusColor = 0xFF0000;
+                if (giftCard.void_reason === 'expired') {
+                    statusText += ' (Expired)';
+                }
+                break;
+            default:
+                statusEmoji = '❓';
+                statusText = 'Unknown';
+                statusColor = 0x808080;
+        }
+
+        embed = new EmbedBuilder()
+            .setTitle('🔍 Gift Card Status Check')
+            .setDescription(`**Gift Card Code:** \`${giftCardCode}\`\n\n**Status:** ${statusEmoji} **${statusText}**\n**Value:** ${giftCard.value} 💎\n**Created:** <t:${Math.floor(createdDate.getTime() / 1000)}:F>\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>${claimedInfo}`)
+            .setColor(statusColor);
+    }
+
+    const reply = await interaction.reply({ embeds: [embed], ephemeral: true });
+
+    // Auto-delete after 5 minutes
+    setTimeout(async () => {
+        try {
+            await reply.delete();
+        } catch (error) {
+            console.log('Could not delete gift card check result:', error.message);
+        }
+    }, 5 * 60 * 1000);
+}
+
+async function handleGiftCardGeneration(interaction) {
+    const diamondAmount = parseInt(interaction.fields.getTextInputValue('diamond_amount'));
+
+    if (isNaN(diamondAmount) || diamondAmount < GIFT_CARD_SETTINGS.min_conversion || diamondAmount > GIFT_CARD_SETTINGS.max_conversion) {
+        return await interaction.reply({ 
+            content: `❌ Invalid amount! Must be between ${GIFT_CARD_SETTINGS.min_conversion.toLocaleString()} and ${GIFT_CARD_SETTINGS.max_conversion.toLocaleString()} diamonds.`, 
+            ephemeral: true 
+        });
+    }
+
+    const userData = pointsSystem.getUserData(interaction.user.id);
+
+    if (userData.points < diamondAmount) {
+        return await interaction.reply({ 
+            content: `❌ Insufficient diamonds! You have ${userData.points.toLocaleString()} 💎 but need ${diamondAmount.toLocaleString()} 💎`, 
+            ephemeral: true 
+        });
+    }
+
+    // Generate unique gift card code
+    let giftCardCode;
+    do {
+        giftCardCode = pointsSystem.generateGiftCardCode();
+    } while (pointsSystem.data.generated_gift_cards[giftCardCode]);
+
+    // Deduct diamonds
+    userData.points -= diamondAmount;
+    userData.total_spent += diamondAmount;
+
+    // Create gift card
+    const giftCard = {
+        value: diamondAmount,
+        status: 'valid',
+        created_at: new Date().toISOString(),
+        created_by: interaction.user.id,
+        claimed_by: null,
+        claimed_at: null,
+        void_reason: null
+    };
+
+    pointsSystem.data.generated_gift_cards[giftCardCode] = giftCard;
+
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + GIFT_CARD_SETTINGS.validity_days);
+
+    const embed = new EmbedBuilder()
+        .setTitle('🎁 Gift Card Generated Successfully!')
+        .setDescription(`**Gift Card Code:** \`${giftCardCode}\`\n\n**Value:** ${diamondAmount.toLocaleString()} 💎\n**Status:** ✅ Valid\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>\n\n⚠️ **Important:** Save this code securely! You can check its status anytime using the "Check Gift Card" button.`)
+        .addFields(
+            { name: '💰 New Balance', value: `${userData.points.toLocaleString()} 💎`, inline: true },
+            { name: '📊 Total Spent', value: `${userData.total_spent.toLocaleString()} 💎`, inline: true }
+        )
+        .setColor(0x00FF00);
+
+    // Try to send DM with gift card code
+    try {
+        const dmEmbed = new EmbedBuilder()
+            .setTitle('🎁 Your Generated Gift Card')
+            .setDescription(`**Gift Card Code:** \`${giftCardCode}\`\n**Value:** ${diamondAmount.toLocaleString()} 💎\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>\n\nKeep this code safe! You can share it with others or use it yourself.`)
+            .setColor(0x00FF00);
+
+        await interaction.user.send({ embeds: [dmEmbed] });
+        embed.addFields({ name: '📧 DM Sent', value: 'Gift card code sent to your DMs!', inline: false });
+    } catch (error) {
+        embed.addFields({ name: '⚠️ DM Failed', value: 'Could not send DM. Please save the code above!', inline: false });
+    }
+
+    const reply = await interaction.reply({ embeds: [embed], ephemeral: true });
+
+    // Auto-delete after 10 minutes for security
+    setTimeout(async () => {
+        try {
+            await reply.delete();
+        } catch (error) {
+            console.log('Could not delete gift card generation result:', error.message);
+        }
+    }, 10 * 60 * 1000);
+
+    await pointsSystem.saveData();
+}
+
+async function handleCheckGiftCard(interaction) {
+    if (interaction.channelId !== CHANNELS.gift_cards) {
+        const embed = new EmbedBuilder()
+            .setTitle('❌ Wrong Channel')
+            .setDescription(`Please use this command in <#${CHANNELS.gift_cards}>`)
+            .setColor(0xFF0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    const giftCardCode = interaction.options.getString('code').trim().toUpperCase();
+
+    // Clean up expired cards first
+    pointsSystem.cleanupExpiredGiftCards();
+
+    const giftCard = pointsSystem.data.generated_gift_cards[giftCardCode];
+
+    let embed;
+    if (!giftCard) {
+        embed = new EmbedBuilder()
+            .setTitle('❌ Invalid Gift Card')
+            .setDescription(`**Gift Card Code:** \`${giftCardCode}\`\n\n**Status:** ❌ **Invalid**\n\nThis gift card code does not exist in our system.`)
+            .setColor(0xFF0000);
+    } else {
+        const createdDate = new Date(giftCard.created_at);
+        const expiryDate = new Date(createdDate);
+        expiryDate.setDate(expiryDate.getDate() + GIFT_CARD_SETTINGS.validity_days);
+
+        let statusEmoji, statusText, statusColor;
+        let claimedInfo = '';
+
+        switch (giftCard.status) {
+            case 'valid':
+                statusEmoji = '✅';
+                statusText = 'Valid';
+                statusColor = 0x00FF00;
+                break;
+            case 'claimed':
+                statusEmoji = '🟡';
+                statusText = 'Claimed';
+                statusColor = 0xFFFF00;
+                if (giftCard.claimed_by) {
+                    try {
+                        const user = await client.users.fetch(giftCard.claimed_by);
+                        claimedInfo = `\n**Claimed by:** @${user.username}\n**Claimed on:** <t:${Math.floor(new Date(giftCard.claimed_at).getTime() / 1000)}:F>`;
+                    } catch {
+                        claimedInfo = `\n**Claimed by:** User ${giftCard.claimed_by}\n**Claimed on:** <t:${Math.floor(new Date(giftCard.claimed_at).getTime() / 1000)}:F>`;
+                    }
+                }
+                break;
+            case 'void':
+                statusEmoji = '❌';
+                statusText = 'Void';
+                statusColor = 0xFF0000;
+                if (giftCard.void_reason === 'expired') {
+                    statusText += ' (Expired)';
+                }
+                break;
+            default:
+                statusEmoji = '❓';
+                statusText = 'Unknown';
+                statusColor = 0x808080;
+        }
+
+        embed = new EmbedBuilder()
+            .setTitle('🔍 Gift Card Status Check')
+            .setDescription(`**Gift Card Code:** \`${giftCardCode}\`\n\n**Status:** ${statusEmoji} **${statusText}**\n**Value:** ${giftCard.value.toLocaleString()} 💎\n**Created:** <t:${Math.floor(createdDate.getTime() / 1000)}:F>\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>${claimedInfo}`)
+            .setColor(statusColor);
+    }
+
+    await interaction.reply({ embeds: [embed] });
+}
+
+async function handleGenerateGiftCard(interaction) {
+    if (interaction.channelId !== CHANNELS.gift_cards) {
+        const embed = new EmbedBuilder()
+            .setTitle('❌ Wrong Channel')
+            .setDescription(`Please use this command in <#${CHANNELS.gift_cards}>`)
+            .setColor(0xFF0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    const diamondAmount = interaction.options.getInteger('amount');
+    const userData = pointsSystem.getUserData(interaction.user.id);
+
+    if (userData.points < diamondAmount) {
+        return await interaction.reply({ 
+            content: `❌ Insufficient diamonds! You have ${userData.points.toLocaleString()} 💎 but need ${diamondAmount.toLocaleString()} 💎`, 
+            ephemeral: true 
+        });
+    }
+
+    // Generate unique gift card code
+    let giftCardCode;
+    do {
+        giftCardCode = pointsSystem.generateGiftCardCode();
+    } while (pointsSystem.data.generated_gift_cards[giftCardCode]);
+
+    // Deduct diamonds
+    userData.points -= diamondAmount;
+    userData.total_spent += diamondAmount;
+
+    // Create gift card
+    const giftCard = {
+        value: diamondAmount,
+        status: 'valid',
+        created_at: new Date().toISOString(),
+        created_by: interaction.user.id,
+        claimed_by: null,
+        claimed_at: null,
+        void_reason: null
+    };
+
+    pointsSystem.data.generated_gift_cards[giftCardCode] = giftCard;
+
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + GIFT_CARD_SETTINGS.validity_days);
+
+    const embed = new EmbedBuilder()
+        .setTitle('🎁 Gift Card Generated Successfully!')
+        .setDescription(`**Gift Card Code:** \`${giftCardCode}\`\n\n**Value:** ${diamondAmount.toLocaleString()} 💎\n**Status:** ✅ Valid\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>\n\n⚠️ **Important:** Save this code securely! You can check its status anytime using the "Check Gift Card" button.`)
+        .addFields(
+            { name: '💰 New Balance', value: `${userData.points.toLocaleString()} 💎`, inline: true },
+            { name: '📊 Total Spent', value: `${userData.total_spent.toLocaleString()} 💎`, inline: true }
+        )
+        .setColor(0x00FF00);
+
+    // Try to send DM with gift card code
+    try {
+        const dmEmbed = new EmbedBuilder()
+            .setTitle('🎁 Your Generated Gift Card')
+            .setDescription(`**Gift Card Code:** \`${giftCardCode}\`\n**Value:** ${diamondAmount.toLocaleString()} 💎\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>\n\nKeep this code safe! You can share it with others or use it yourself.`)
+            .setColor(0x00FF00);
+
+        await interaction.user.send({ embeds: [dmEmbed] });
+        embed.addFields({ name: '📧 DM Sent', value: 'Gift card code sent to your DMs!', inline: false });
+    } catch (error) {
+        embed.addFields({ name: '⚠️ DM Failed', value: 'Could not send DM. Please save the code above!', inline: false });
+    }
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+    await pointsSystem.saveData();
+}
+
 // Startup functions
 async function sendStartupPanels() {
     await cleanupOldPanels();
@@ -1061,12 +1482,12 @@ async function sendGiftCardPanel() {
     const giftCardChannel = client.channels.cache.get(CHANNELS.gift_cards);
     if (giftCardChannel) {
         const embed = new EmbedBuilder()
-            .setTitle('🎁 Gift Card Redemption Center')
-            .setDescription(`**Convert Your Diamonds to Rewards!**\n\`\`\`\n  🎁 GIFT CARD STORE 🎁\n╔══════════════════════╗\n║ 🎮 PCRP Gift Card    ║\n║      💎 500          ║\n╚══════════════════════╝\n\`\`\`\n\n**Available Gift Cards:**\n🎁 **PCRP Gift Card** - 500 💎\n\n**Commands Available:**\n• \`/test_dm\` - Test if bot can DM you\n• \`/convert_points\` - Convert diamonds to gift card\n• \`/convert_giftcard\` - Convert gift card back to diamonds`)
+            .setTitle('🎁 Gift Card Management Center')
+            .setDescription(`**Convert Your Diamonds to Gift Cards!**\n\`\`\`\n  🎁 GIFT CARD STORE 🎁\n╔══════════════════════╗\n║ 💎 Generate Cards    ║\n║ 🔍 Check Status      ║\n║ 🎮 PCRP Gift Card    ║\n║      💎 500          ║\n╚══════════════════════╝\n\`\`\`\n\n**Gift Card System:**\n💎 **Generate Gift Card** - Convert 500-100,000 💎\n🔘 **Check Gift Card** - Verify code status\n🎁 **PCRP Gift Card** - 500 💎 (Legacy system)\n\n**Commands Available:**\n• \`/generate_gift_card <amount>\` - Create a gift card\n• \`/check_gift_card <code>\` - Check gift card status\n• \`/test_dm\` - Test if bot can DM you\n• \`/convert_points\` - Legacy gift card system`)
             .setColor(0xFFD700);
 
         const components = createGiftCardPanelButtons();
-        await giftCardChannel.send({ embeds: [embed], components: [components] });
+        await giftCardChannel.send({ embeds: [embed], components });
         console.log('✅ Gift card panel sent');
     }
 }
