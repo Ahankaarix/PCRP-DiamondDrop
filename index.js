@@ -224,6 +224,7 @@ setInterval(
 
 // UNO Game System
 let activeUnoGames = new Map();
+let unoTickets = new Map(); // Store UNO tickets
 
 // AI Bot Players
 const aiBotPlayers = [
@@ -232,6 +233,69 @@ const aiBotPlayers = [
     { id: "ai_bot_3", name: "🎯 Lucky Player", difficulty: "medium" },
     { id: "ai_bot_4", name: "🎲 Rookie Bot", difficulty: "easy" },
 ];
+
+// UNO Ticket System
+function generateUnoTicketId() {
+    return "UNO-" + Math.random().toString(36).substring(2, 10).toUpperCase();
+}
+
+function createUnoTicketPanel() {
+    const embed = new EmbedBuilder()
+        .setTitle("🃏 UNO Game Ticket System")
+        .setDescription(
+            `**Create Your UNO Gaming Session!**\n\`\`\`\n` +
+            `    🃏 UNO TICKETS 🃏\n` +
+            `  ╔═══════════════════╗\n` +
+            `  ║ 🎫 Create Ticket  ║\n` +
+            `  ║ 💎 Set Bet Amount ║\n` +
+            `  ║ 🤖 Choose AI Mode ║\n` +
+            `  ║ 👥 Play with Users║\n` +
+            `  ╚═══════════════════╝\n` +
+            `\`\`\`\n\n` +
+            `**How to Start:**\n` +
+            `1. 🎫 **Create Ticket** - Set up your game session\n` +
+            `2. 💎 **Set Bet** - Choose diamond amount (10-1000 💎)\n` +
+            `3. 🤖 **AI Options** - Choose difficulty or human-only\n` +
+            `4. 🎮 **Start Game** - Begin your UNO showdown!\n\n` +
+            `**Game Features:**\n` +
+            `• 💎 **Diamond Betting** - Win prizes based on placement\n` +
+            `• 🤖 **AI Players** - 4 difficulty levels available\n` +
+            `• 🏆 **Prize Distribution** - 50%/30%/20% for top 3\n` +
+            `• ⚡ **Auto-cleanup** - Games clean up if inactive\n\n` +
+            `**Betting Ranges:**\n` +
+            `• Minimum Bet: 10 💎 per player\n` +
+            `• Maximum Bet: 1000 💎 per player\n` +
+            `• Winner gets 50% of total prize pool\n\n` +
+            `**AI Difficulty Levels:**\n` +
+            `🎲 **EASY** - 70% play rate, basic strategy\n` +
+            `🎯 **MEDIUM** - 85% play rate, prefers action cards\n` +
+            `🎮 **HARD** - 90% play rate, strategic choices\n` +
+            `🤖 **EXPERT** - 95% play rate, optimal strategy\n\n` +
+            `Click **Create UNO Ticket** to start your gaming session!`,
+        )
+        .setColor(0x9932cc)
+        .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId("create_uno_ticket")
+            .setLabel("🎫 Create UNO Ticket")
+            .setStyle(ButtonStyle.Primary)
+            .setEmoji("🃏"),
+        new ButtonBuilder()
+            .setCustomId("uno_rules_guide")
+            .setLabel("📋 Rules & Guide")
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji("📖"),
+        new ButtonBuilder()
+            .setCustomId("uno_active_games")
+            .setLabel("🎮 Active Games")
+            .setStyle(ButtonStyle.Success)
+            .setEmoji("👀"),
+    );
+
+    return { embeds: [embed], components: [row] };
+}
 
 class UnoGame {
     constructor(channelId, creatorId) {
@@ -1312,6 +1376,11 @@ client.once("ready", async () => {
                 "Admin: Send the comprehensive system commands panel",
             )
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+        new SlashCommandBuilder()
+            .setName("send_uno_ticket_panel")
+            .setDescription("Admin: Send the UNO ticket system panel")
+            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
     ];
 
     try {
@@ -1408,6 +1477,9 @@ async function handleSlashCommand(interaction) {
                 break;
             case "send_system_panel":
                 await handleSendSystemPanel(interaction);
+                break;
+            case "send_uno_ticket_panel":
+                await handleSendUnoTicketPanel(interaction);
                 break;
         }
     } catch (error) {
@@ -1550,6 +1622,41 @@ async function handleButtonInteraction(interaction) {
             await handleDiamondMining(interaction, eventId);
         }
 
+        // Handle UNO ticket system buttons
+        switch (customId) {
+            case "create_uno_ticket":
+                await handleCreateUnoTicket(interaction);
+                break;
+            case "uno_rules_guide":
+                await handleUnoRulesGuide(interaction);
+                break;
+            case "uno_active_games":
+                await handleUnoActiveGames(interaction);
+                break;
+        }
+
+        // Handle UNO ticket actions
+        if (customId.startsWith("uno_ticket_")) {
+            const parts = customId.split("_");
+            const action = parts[2];
+            const ticketId = parts[3];
+            
+            switch (action) {
+                case "join":
+                    await handleUnoTicketJoin(interaction, ticketId);
+                    break;
+                case "start":
+                    await handleUnoTicketStart(interaction, ticketId);
+                    break;
+                case "addai":
+                    await handleUnoTicketAddAI(interaction, ticketId);
+                    break;
+                case "cancel":
+                    await handleUnoTicketCancel(interaction, ticketId);
+                    break;
+            }
+        }
+
         // Handle UNO game buttons
         if (customId.startsWith("uno_join_")) {
             const gameId = customId.replace("uno_join_", "");
@@ -1602,6 +1709,8 @@ async function handleModalSubmit(interaction) {
             await handlePointDropTicketSubmission(interaction);
         } else if (customId.startsWith("uno_bet_modal_")) {
             await handleUnoBetModal(interaction);
+        } else if (customId === "uno_ticket_modal") {
+            await handleUnoTicketModal(interaction);
         }
     } catch (error) {
         console.error("Error handling modal submit:", error);
@@ -3388,6 +3497,321 @@ async function showUserCommands(interaction) {
                 await reply.delete();
             } catch (error) {
                 console.log(
+
+async function handleUnoTicketJoin(interaction, ticketId) {
+    const ticket = unoTickets.get(ticketId);
+    if (!ticket) {
+        return await interaction.reply({
+            content: "❌ This ticket no longer exists!",
+            ephemeral: true,
+        });
+    }
+
+    if (ticket.status !== "open") {
+        return await interaction.reply({
+            content: "❌ This ticket is no longer accepting players!",
+            ephemeral: true,
+        });
+    }
+
+    if (ticket.players.includes(interaction.user.id)) {
+        return await interaction.reply({
+            content: "❌ You're already in this game!",
+            ephemeral: true,
+        });
+    }
+
+    if (ticket.players.length >= ticket.maxPlayers) {
+        return await interaction.reply({
+            content: "❌ This game is full!",
+            ephemeral: true,
+        });
+    }
+
+    // Check if user has enough diamonds
+    const userData = pointsSystem.getUserData(interaction.user.id);
+    if (userData.points < ticket.betAmount) {
+        return await interaction.reply({
+            content: `❌ You need ${ticket.betAmount} 💎 but only have ${userData.points} 💎!`,
+            ephemeral: true,
+        });
+    }
+
+    // Deduct bet and add player
+    userData.points -= ticket.betAmount;
+    userData.total_spent += ticket.betAmount;
+    ticket.players.push(interaction.user.id);
+    await pointsSystem.saveData();
+
+    // Update the ticket display
+    const playerList = await Promise.all(
+        ticket.players.map(async (id) => {
+            try {
+                const user = await client.users.fetch(id);
+                return user.displayName;
+            } catch {
+                return `User ${id}`;
+            }
+        })
+    );
+
+    const embed = new EmbedBuilder()
+        .setTitle("🎫 UNO Game Ticket - Updated!")
+        .setDescription(
+            `**🃏 UNO GAMING LOBBY 🃏**\n\`\`\`\n` +
+            `    🎫 TICKET: ${ticketId}\n` +
+            `  ╔═══════════════════╗\n` +
+            `  ║ 💎 Bet: ${ticket.betAmount} 💎/player ║\n` +
+            `  ║ 🤖 AI: ${ticket.aiMode.toUpperCase()}        ║\n` +
+            `  ║ 👥 Players: ${ticket.players.length}/${ticket.maxPlayers}    ║\n` +
+            `  ╚═══════════════════╝\n` +
+            `\`\`\`\n\n` +
+            `**Game Details:**\n` +
+            `🎫 **Ticket ID:** \`${ticketId}\`\n` +
+            `💎 **Bet Amount:** ${ticket.betAmount} 💎 per player\n` +
+            `🤖 **AI Mode:** ${ticket.aiMode.charAt(0).toUpperCase() + ticket.aiMode.slice(1)}\n` +
+            `👥 **Max Players:** ${ticket.maxPlayers}\n` +
+            `📝 **Description:** ${ticket.description}\n\n` +
+            `**Prize Distribution:**\n` +
+            `🥇 **1st Place:** ${Math.floor(ticket.betAmount * ticket.maxPlayers * 0.5)} 💎 (50%)\n` +
+            `🥈 **2nd Place:** ${Math.floor(ticket.betAmount * ticket.maxPlayers * 0.3)} 💎 (30%)\n` +
+            `🥉 **3rd Place:** ${Math.floor(ticket.betAmount * ticket.maxPlayers * 0.2)} 💎 (20%)\n\n` +
+            `**Current Players (${ticket.players.length}):** ${playerList.join(", ")}\n\n` +
+            `**Status:** ${ticket.players.length >= 2 ? "✅ Ready to start!" : "⏳ Waiting for more players..."}\n`,
+        )
+        .setColor(ticket.players.length >= 2 ? 0x00ff00 : 0xffaa00)
+        .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`uno_ticket_join_${ticketId}`)
+            .setLabel("🎮 Join Game")
+            .setStyle(ButtonStyle.Success)
+            .setEmoji("🃏")
+            .setDisabled(ticket.players.length >= ticket.maxPlayers),
+        new ButtonBuilder()
+            .setCustomId(`uno_ticket_addai_${ticketId}`)
+            .setLabel("🤖 Add AI Bot")
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji("🎯"),
+        new ButtonBuilder()
+            .setCustomId(`uno_ticket_start_${ticketId}`)
+            .setLabel("▶️ Start Game")
+            .setStyle(ButtonStyle.Primary)
+            .setEmoji("🚀")
+            .setDisabled(ticket.players.length < 2),
+        new ButtonBuilder()
+            .setCustomId(`uno_ticket_cancel_${ticketId}`)
+            .setLabel("❌ Cancel")
+            .setStyle(ButtonStyle.Danger),
+    );
+
+    await interaction.update({ embeds: [embed], components: [row] });
+
+    await interaction.followUp({
+        content: `🎮 ${interaction.user.displayName} joined the UNO game and paid ${ticket.betAmount} 💎!`,
+        ephemeral: false,
+    });
+}
+
+async function handleUnoTicketAddAI(interaction, ticketId) {
+    const ticket = unoTickets.get(ticketId);
+    if (!ticket) {
+        return await interaction.reply({
+            content: "❌ This ticket no longer exists!",
+            ephemeral: true,
+        });
+    }
+
+    if (ticket.creatorId !== interaction.user.id) {
+        return await interaction.reply({
+            content: "❌ Only the ticket creator can add AI bots!",
+            ephemeral: true,
+        });
+    }
+
+    if (ticket.aiMode === "none") {
+        return await interaction.reply({
+            content: "❌ This ticket is set to human-only mode!",
+            ephemeral: true,
+        });
+    }
+
+    if (ticket.players.length >= ticket.maxPlayers) {
+        return await interaction.reply({
+            content: "❌ This game is already full!",
+            ephemeral: true,
+        });
+    }
+
+    // Add AI player based on mode
+    let aiDifficulty;
+    if (ticket.aiMode === "mixed") {
+        const difficulties = ["easy", "medium", "hard", "expert"];
+        aiDifficulty = difficulties[Math.floor(Math.random() * difficulties.length)];
+    } else {
+        aiDifficulty = ticket.aiMode;
+    }
+
+    const availableAI = aiBotPlayers.filter(
+        (bot) => bot.difficulty === aiDifficulty && !ticket.players.includes(bot.id)
+    );
+
+    if (availableAI.length === 0) {
+        return await interaction.reply({
+            content: `❌ No ${aiDifficulty.toUpperCase()} AI bots available!`,
+            ephemeral: true,
+        });
+    }
+
+    const aiBot = availableAI[0];
+    ticket.players.push(aiBot.id);
+
+    await interaction.reply({
+        content: `🤖 ${aiBot.name} (${aiDifficulty.toUpperCase()}) joined the game!`,
+        ephemeral: false,
+    });
+}
+
+async function handleUnoTicketStart(interaction, ticketId) {
+    const ticket = unoTickets.get(ticketId);
+    if (!ticket) {
+        return await interaction.reply({
+            content: "❌ This ticket no longer exists!",
+            ephemeral: true,
+        });
+    }
+
+    if (ticket.creatorId !== interaction.user.id) {
+        return await interaction.reply({
+            content: "❌ Only the ticket creator can start the game!",
+            ephemeral: true,
+        });
+    }
+
+    if (ticket.players.length < 2) {
+        return await interaction.reply({
+            content: "❌ Need at least 2 players to start!",
+            ephemeral: true,
+        });
+    }
+
+    // Convert ticket to actual game
+    const game = new UnoGame(ticket.channelId, ticket.creatorId);
+    game.players = [...ticket.players];
+    game.setBetAmount(ticket.betAmount);
+    
+    // Set up AI players
+    for (const playerId of ticket.players) {
+        const aiBot = aiBotPlayers.find(bot => bot.id === playerId);
+        if (aiBot) {
+            game.aiPlayers.set(playerId, aiBot);
+        }
+    }
+
+    game.status = "active";
+    game.dealCards();
+    activeUnoGames.set(game.gameId, game);
+
+    // Remove ticket
+    ticket.status = "started";
+    unoTickets.delete(ticketId);
+
+    // Start the game
+    const currentPlayer = await client.users.fetch(game.getCurrentPlayer());
+    const topCard = game.discardPile[game.discardPile.length - 1];
+
+    const embed = new EmbedBuilder()
+        .setTitle("🃏 UNO Game Started!")
+        .setDescription(
+            `**🎮 GAME ACTIVE 🎮**\n\`\`\`\n` +
+            `    🃏 UNO IN PROGRESS 🃏\n` +
+            `  ╔═══════════════════════╗\n` +
+            `  ║ Players: ${game.players.length}           ║\n` +
+            `  ║ Bet: ${game.betAmount} 💎 each        ║\n` +
+            `  ║ Prize Pool: ${game.totalPrizePool} 💎     ║\n` +
+            `  ╚═══════════════════════╝\n` +
+            `\`\`\`\n\n` +
+            `**Current Player:** ${currentPlayer.displayName}\n` +
+            `**Top Card:** ${topCard.emoji}\n` +
+            `**Direction:** ${game.direction === 1 ? "➡️ Clockwise" : "⬅️ Counter-clockwise"}\n\n` +
+            `**Players:**\n` +
+            (await Promise.all(
+                game.players.map(async (id, index) => {
+                    if (game.aiPlayers.has(id)) {
+                        const aiData = game.aiPlayers.get(id);
+                        const indicator = index === game.currentPlayerIndex ? "👉" : "  ";
+                        return `${indicator} ${aiData.name} (AI): ${game.hands.get(id).length} cards`;
+                    } else {
+                        const user = await client.users.fetch(id);
+                        const cards = game.hands.get(id).length;
+                        const indicator = index === game.currentPlayerIndex ? "👉" : "  ";
+                        return `${indicator} ${user.displayName}: ${cards} cards`;
+                    }
+                })
+            )).join("\n") +
+            `\n\n**Prize Distribution:**\n` +
+            `🥇 1st: ${Math.floor(game.totalPrizePool * 0.5)} 💎\n` +
+            `🥈 2nd: ${Math.floor(game.totalPrizePool * 0.3)} 💎\n` +
+            `🥉 3rd: ${Math.floor(game.totalPrizePool * 0.2)} 💎\n\n` +
+            `⚠️ **Auto-cleanup in 10 seconds if no activity!**`,
+        )
+        .setColor(0x00ff00)
+        .setTimestamp();
+
+    const components = createUnoGameButtons(game.gameId);
+    await interaction.update({ embeds: [embed], components: [components] });
+
+    // Start auto-cleanup for the active game
+    game.startAutoCleanup(interaction.message);
+}
+
+async function handleUnoTicketCancel(interaction, ticketId) {
+    const ticket = unoTickets.get(ticketId);
+    if (!ticket) {
+        return await interaction.reply({
+            content: "❌ This ticket no longer exists!",
+            ephemeral: true,
+        });
+    }
+
+    if (ticket.creatorId !== interaction.user.id) {
+        return await interaction.reply({
+            content: "❌ Only the ticket creator can cancel the game!",
+            ephemeral: true,
+        });
+    }
+
+    // Refund all players
+    for (const playerId of ticket.players) {
+        const aiBot = aiBotPlayers.find(bot => bot.id === playerId);
+        if (!aiBot) { // Only refund human players
+            const userData = pointsSystem.getUserData(playerId);
+            userData.points += ticket.betAmount;
+            userData.total_spent -= ticket.betAmount;
+        }
+    }
+    await pointsSystem.saveData();
+
+    unoTickets.delete(ticketId);
+
+    const embed = new EmbedBuilder()
+        .setTitle("❌ UNO Ticket Cancelled")
+        .setDescription(`The UNO game ticket has been cancelled by the creator.\n\nAll ${ticket.betAmount} 💎 bets have been refunded to players.`)
+        .setColor(0xff0000);
+
+    await interaction.update({ embeds: [embed], components: [] });
+
+    // Auto-delete cancellation message
+    setTimeout(async () => {
+        try {
+            await interaction.message.delete();
+        } catch (error) {
+            console.log("Could not delete cancelled ticket message:", error.message);
+        }
+    }, 10000);
+}
+
                     "Could not delete user commands information:",
                     error.message,
                 );
@@ -4463,6 +4887,274 @@ async function handleSendSystemPanel(interaction) {
         content: "✅ System commands panel sent!",
         ephemeral: true,
     });
+}
+
+async function handleSendUnoTicketPanel(interaction) {
+    if (!hasAdminRole(interaction)) {
+        const embed = new EmbedBuilder()
+            .setTitle("❌ Access Denied")
+            .setDescription("You need the admin role to use this command.")
+            .setColor(0xff0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    const unoChannel = client.channels.cache.get("1387168027027574875");
+    if (unoChannel) {
+        const panelData = createUnoTicketPanel();
+        await unoChannel.send(panelData);
+        await interaction.reply({
+            content: "✅ UNO ticket panel sent to the gaming channel!",
+            ephemeral: true,
+        });
+    } else {
+        await interaction.reply({
+            content: "❌ UNO gaming channel not found!",
+            ephemeral: true,
+        });
+    }
+}
+
+async function handleCreateUnoTicket(interaction) {
+    // Check if in correct channel
+    if (interaction.channelId !== "1387168027027574875") {
+        const embed = new EmbedBuilder()
+            .setTitle("❌ Wrong Channel")
+            .setDescription("UNO tickets can only be created in the designated gaming channel!")
+            .setColor(0xff0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    const modal = new ModalBuilder()
+        .setCustomId("uno_ticket_modal")
+        .setTitle("🎫 Create UNO Game Ticket");
+
+    const betInput = new TextInputBuilder()
+        .setCustomId("bet_amount")
+        .setLabel("Diamond Bet Amount (10-1000 per player)")
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder("Enter diamonds each player must bet...")
+        .setRequired(true)
+        .setMaxLength(4);
+
+    const aiModeInput = new TextInputBuilder()
+        .setCustomId("ai_mode")
+        .setLabel("AI Mode (none/easy/medium/hard/expert/mixed)")
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder("Choose AI difficulty or 'none' for human-only...")
+        .setRequired(true)
+        .setMaxLength(10);
+
+    const maxPlayersInput = new TextInputBuilder()
+        .setCustomId("max_players")
+        .setLabel("Maximum Players (2-10)")
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder("Enter maximum number of players...")
+        .setRequired(true)
+        .setMaxLength(2);
+
+    const gameDescInput = new TextInputBuilder()
+        .setCustomId("game_description")
+        .setLabel("Game Description (Optional)")
+        .setStyle(TextInputStyle.Paragraph)
+        .setPlaceholder("Describe your UNO session...")
+        .setRequired(false)
+        .setMaxLength(200);
+
+    modal.addComponents(
+        new ActionRowBuilder().addComponents(betInput),
+        new ActionRowBuilder().addComponents(aiModeInput),
+        new ActionRowBuilder().addComponents(maxPlayersInput),
+        new ActionRowBuilder().addComponents(gameDescInput),
+    );
+
+    await interaction.showModal(modal);
+}
+
+async function handleUnoTicketModal(interaction) {
+    const betAmount = parseInt(interaction.fields.getTextInputValue("bet_amount"));
+    const aiMode = interaction.fields.getTextInputValue("ai_mode").toLowerCase();
+    const maxPlayers = parseInt(interaction.fields.getTextInputValue("max_players"));
+    const gameDescription = interaction.fields.getTextInputValue("game_description") || "Standard UNO Game";
+
+    // Validation
+    if (isNaN(betAmount) || betAmount < 10 || betAmount > 1000) {
+        return await interaction.reply({
+            content: "❌ Bet amount must be between 10 and 1000 diamonds!",
+            ephemeral: true,
+        });
+    }
+
+    if (isNaN(maxPlayers) || maxPlayers < 2 || maxPlayers > 10) {
+        return await interaction.reply({
+            content: "❌ Maximum players must be between 2 and 10!",
+            ephemeral: true,
+        });
+    }
+
+    const validAIModes = ["none", "easy", "medium", "hard", "expert", "mixed"];
+    if (!validAIModes.includes(aiMode)) {
+        return await interaction.reply({
+            content: "❌ AI mode must be: none, easy, medium, hard, expert, or mixed!",
+            ephemeral: true,
+        });
+    }
+
+    // Check if user has enough diamonds
+    const userData = pointsSystem.getUserData(interaction.user.id);
+    if (userData.points < betAmount) {
+        return await interaction.reply({
+            content: `❌ You need ${betAmount} 💎 but only have ${userData.points} 💎!`,
+            ephemeral: true,
+        });
+    }
+
+    // Create ticket
+    const ticketId = generateUnoTicketId();
+    const ticket = {
+        id: ticketId,
+        creatorId: interaction.user.id,
+        betAmount: betAmount,
+        aiMode: aiMode,
+        maxPlayers: maxPlayers,
+        description: gameDescription,
+        players: [interaction.user.id],
+        status: "open",
+        createdAt: new Date().toISOString(),
+        channelId: interaction.channelId,
+    };
+
+    unoTickets.set(ticketId, ticket);
+
+    // Deduct bet from creator
+    userData.points -= betAmount;
+    userData.total_spent += betAmount;
+    await pointsSystem.saveData();
+
+    const embed = new EmbedBuilder()
+        .setTitle("🎫 UNO Game Ticket Created!")
+        .setDescription(
+            `**🃏 UNO GAMING LOBBY 🃏**\n\`\`\`\n` +
+            `    🎫 TICKET: ${ticketId}\n` +
+            `  ╔═══════════════════╗\n` +
+            `  ║ 💎 Bet: ${betAmount} 💎/player ║\n` +
+            `  ║ 🤖 AI: ${aiMode.toUpperCase()}        ║\n` +
+            `  ║ 👥 Players: 1/${maxPlayers}    ║\n` +
+            `  ╚═══════════════════╝\n` +
+            `\`\`\`\n\n` +
+            `**Game Details:**\n` +
+            `🎫 **Ticket ID:** \`${ticketId}\`\n` +
+            `👑 **Host:** ${interaction.user.displayName}\n` +
+            `💎 **Bet Amount:** ${betAmount} 💎 per player\n` +
+            `🤖 **AI Mode:** ${aiMode.charAt(0).toUpperCase() + aiMode.slice(1)}\n` +
+            `👥 **Max Players:** ${maxPlayers}\n` +
+            `📝 **Description:** ${gameDescription}\n\n` +
+            `**Prize Distribution:**\n` +
+            `🥇 **1st Place:** ${Math.floor(betAmount * maxPlayers * 0.5)} 💎 (50%)\n` +
+            `🥈 **2nd Place:** ${Math.floor(betAmount * maxPlayers * 0.3)} 💎 (30%)\n` +
+            `🥉 **3rd Place:** ${Math.floor(betAmount * maxPlayers * 0.2)} 💎 (20%)\n\n` +
+            `**Current Players (1):** ${interaction.user.displayName} ✅\n\n` +
+            `**How to Join:**\n` +
+            `• Click "🎮 Join Game" to pay ${betAmount} 💎 and join\n` +
+            `• AI bots will be added based on selected mode\n` +
+            `• Game starts when enough players join\n\n` +
+            `⚠️ **Note:** Your ${betAmount} 💎 bet has been deducted!`,
+        )
+        .setColor(0x00ff00)
+        .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`uno_ticket_join_${ticketId}`)
+            .setLabel("🎮 Join Game")
+            .setStyle(ButtonStyle.Success)
+            .setEmoji("🃏"),
+        new ButtonBuilder()
+            .setCustomId(`uno_ticket_addai_${ticketId}`)
+            .setLabel("🤖 Add AI Bot")
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji("🎯"),
+        new ButtonBuilder()
+            .setCustomId(`uno_ticket_start_${ticketId}`)
+            .setLabel("▶️ Start Game")
+            .setStyle(ButtonStyle.Primary)
+            .setEmoji("🚀"),
+        new ButtonBuilder()
+            .setCustomId(`uno_ticket_cancel_${ticketId}`)
+            .setLabel("❌ Cancel")
+            .setStyle(ButtonStyle.Danger),
+    );
+
+    await interaction.reply({ embeds: [embed], components: [row] });
+}
+
+async function handleUnoRulesGuide(interaction) {
+    const embed = new EmbedBuilder()
+        .setTitle("📋 UNO Rules & Game Guide")
+        .setDescription("**Complete UNO Gaming Guide**")
+        .addFields(
+            {
+                name: "🎮 Basic Rules",
+                value: "• Match color or number to play\n• Draw cards if you can't play\n• Call UNO when you have 1 card left!\n• First to empty hand wins",
+                inline: true,
+            },
+            {
+                name: "🃏 Special Cards",
+                value: "🔄 **Reverse** - Change direction\n⏭️ **Skip** - Skip next player\n➕2️⃣ **Draw 2** - Next player draws 2\n🌈 **Wild** - Choose color\n🌈⚡ **Wild +4** - Choose color, +4 cards",
+                inline: true,
+            },
+            {
+                name: "💎 Betting System",
+                value: "• Set bet amount (10-1000 💎)\n• All players must pay to join\n• Prizes distributed to top 3\n• Winner gets 50% of prize pool",
+                inline: false,
+            },
+            {
+                name: "🤖 AI Modes",
+                value: "🎲 **EASY** - 70% play rate, basic strategy\n🎯 **MEDIUM** - 85% play rate, prefers action cards\n🎮 **HARD** - 90% play rate, strategic choices\n🤖 **EXPERT** - 95% play rate, optimal strategy\n🎭 **MIXED** - Random AI difficulties",
+                inline: false,
+            },
+            {
+                name: "🎫 Ticket System",
+                value: "• Create tickets to set up games\n• Choose bet amount and AI mode\n• Players join by paying bet\n• Host controls game start\n• Auto-cleanup if inactive",
+                inline: false,
+            },
+        )
+        .setColor(0x0099ff);
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function handleUnoActiveGames(interaction) {
+    const activeTickets = Array.from(unoTickets.values()).filter(ticket => ticket.status === "open");
+    const activeGames = Array.from(activeUnoGames.values());
+
+    const embed = new EmbedBuilder()
+        .setTitle("🎮 Active UNO Sessions")
+        .setColor(0x00ff00);
+
+    if (activeTickets.length === 0 && activeGames.length === 0) {
+        embed.setDescription("No active UNO tickets or games at the moment.\n\nCreate a new ticket to start playing!");
+    } else {
+        let description = "";
+        
+        if (activeTickets.length > 0) {
+            description += "**🎫 Open Tickets:**\n";
+            for (const ticket of activeTickets.slice(0, 5)) {
+                description += `• \`${ticket.id}\` - ${ticket.betAmount}💎 - ${ticket.players.length}/${ticket.maxPlayers} players\n`;
+            }
+            description += "\n";
+        }
+
+        if (activeGames.length > 0) {
+            description += "**🃏 Active Games:**\n";
+            for (const game of activeGames.slice(0, 5)) {
+                description += `• Game \`${game.gameId.substring(4, 12)}\` - ${game.players.length} players - ${game.betAmount}💎\n`;
+            }
+        }
+
+        embed.setDescription(description);
+    }
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
 }
 
 async function sendSystemCommandsPanel() {
