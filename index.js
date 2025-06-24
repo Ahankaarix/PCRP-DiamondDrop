@@ -174,6 +174,47 @@ setInterval(
     5 * 60 * 1000,
 );
 
+// Auto-cleanup old messages every hour
+setInterval(
+    async () => {
+        console.log("🧹 Hourly auto-cleanup starting...");
+        try {
+            // Clean up old user-generated gift cards
+            const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+            let cleanedCards = 0;
+            
+            for (const [code, card] of Object.entries(pointsSystem.data.generated_gift_cards)) {
+                const cardDate = new Date(card.created_at);
+                if (cardDate < oneDayAgo && (card.status === "void" || card.status === "claimed")) {
+                    delete pointsSystem.data.generated_gift_cards[code];
+                    cleanedCards++;
+                }
+            }
+            
+            // Clean up old point drop tickets
+            const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+            let cleanedTickets = 0;
+            
+            for (const [ticketId, ticket] of Object.entries(pointDropTickets)) {
+                const ticketDate = new Date(ticket.createdAt);
+                if (ticketDate < sevenDaysAgo) {
+                    delete pointDropTickets[ticketId];
+                    cleanedTickets++;
+                }
+            }
+            
+            if (cleanedCards > 0 || cleanedTickets > 0) {
+                console.log(`🧹 Auto-cleanup: ${cleanedCards} cards, ${cleanedTickets} tickets removed`);
+                if (cleanedCards > 0) await pointsSystem.saveData();
+            }
+            
+        } catch (error) {
+            console.error("Error during auto-cleanup:", error);
+        }
+    },
+    60 * 60 * 1000, // Every hour
+);
+
 // Utility functions
 function createDailyClaimButtons() {
     return new ActionRowBuilder().addComponents(
@@ -398,6 +439,11 @@ client.once("ready", async () => {
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
         new SlashCommandBuilder()
+            .setName("cleanup_old_messages")
+            .setDescription("Admin: Clean up old bot messages and user interactions")
+            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+        new SlashCommandBuilder()
             .setName("approve_point_drop")
             .setDescription("Admin: Approve a point drop ticket")
             .addStringOption((option) =>
@@ -505,6 +551,9 @@ async function handleSlashCommand(interaction) {
                 break;
             case "reject_point_drop":
                 await handleRejectPointDrop(interaction);
+                break;
+            case "cleanup_old_messages":
+                await handleCleanupOldMessages(interaction);
                 break;
         }
     } catch (error) {
@@ -2282,6 +2331,87 @@ async function handleRejectPointDrop(interaction) {
     });
 }
 
+async function handleCleanupOldMessages(interaction) {
+    if (!hasAdminRole(interaction)) {
+        const embed = new EmbedBuilder()
+            .setTitle("❌ Access Denied")
+            .setDescription("You need the admin role to use this command.")
+            .setColor(0xff0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    await interaction.reply({
+        content: "🧹 Starting enhanced cleanup of old messages and user interactions...",
+        ephemeral: true,
+    });
+
+    try {
+        console.log("🧹 Manual cleanup initiated by admin:", interaction.user.tag);
+        
+        // Clean up data first
+        pointsSystem.cleanupExpiredGiftCards();
+        
+        // Clean up old gift cards
+        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        let cleanedCards = 0;
+        
+        for (const [code, card] of Object.entries(pointsSystem.data.generated_gift_cards)) {
+            const cardDate = new Date(card.created_at);
+            if (cardDate < oneDayAgo && (card.status === "void" || card.status === "claimed")) {
+                delete pointsSystem.data.generated_gift_cards[code];
+                cleanedCards++;
+            }
+        }
+        
+        if (cleanedCards > 0) {
+            await pointsSystem.saveData();
+        }
+        
+        // Clean up old tickets
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        let cleanedTickets = 0;
+        
+        for (const [ticketId, ticket] of Object.entries(pointDropTickets)) {
+            const ticketDate = new Date(ticket.createdAt);
+            if (ticketDate < sevenDaysAgo) {
+                delete pointDropTickets[ticketId];
+                cleanedTickets++;
+            }
+        }
+        
+        // Perform enhanced channel cleanup
+        await performEnhancedChannelCleanup();
+        
+        const embed = new EmbedBuilder()
+            .setTitle("🧹 Cleanup Completed!")
+            .setDescription(
+                `**Enhanced cleanup results:**\n\n` +
+                `💾 **Data Cleanup:**\n` +
+                `• ${cleanedCards} old gift cards removed\n` +
+                `• ${cleanedTickets} old tickets removed\n` +
+                `• Expired gift cards updated\n\n` +
+                `📨 **Message Cleanup:**\n` +
+                `• All bot messages removed\n` +
+                `• Old user interactions cleaned\n` +
+                `• Casino results cleared\n` +
+                `• Old mining events removed\n\n` +
+                `✅ **All channels are now clean and fresh!**`
+            )
+            .setColor(0x00ff00)
+            .setTimestamp();
+            
+        await interaction.followUp({ embeds: [embed], ephemeral: true });
+        
+    } catch (error) {
+        console.error("Error during manual cleanup:", error);
+        const errorEmbed = new EmbedBuilder()
+            .setTitle("❌ Cleanup Error")
+            .setDescription("An error occurred during cleanup. Check console for details.")
+            .setColor(0xff0000);
+        await interaction.followUp({ embeds: [errorEmbed], ephemeral: true });
+    }
+}
+
 async function showUserCommands(interaction) {
     const embed = new EmbedBuilder()
         .setTitle("👥 User Commands - Diamond Bot")
@@ -3351,6 +3481,10 @@ async function cleanupOldPanels() {
         console.log(`🧹 Cleaned up ${cleanedTickets} old point drop tickets`);
     }
 
+    await performEnhancedChannelCleanup();
+}
+
+async function performEnhancedChannelCleanup() {
     const channels = [
         CHANNELS.daily_claims,
         CHANNELS.gambling,
@@ -3366,38 +3500,53 @@ async function cleanupOldPanels() {
         if (channel) {
             try {
                 console.log(
-                    `🧹 Cleaning channel: ${channel.name || channelId}`,
+                    `🧹 Deep cleaning channel: ${channel.name || channelId}`,
                 );
 
                 let totalCleanedMessages = 0;
+                let lastMessageId = null;
 
-                // Fetch more messages to ensure complete cleanup
-                let fetched;
-                do {
-                    fetched = await channel.messages.fetch({ limit: 100 });
+                // Enhanced cleanup - fetch ALL messages, not just recent ones
+                while (true) {
+                    const fetchOptions = { limit: 100 };
+                    if (lastMessageId) {
+                        fetchOptions.before = lastMessageId;
+                    }
+
+                    const fetched = await channel.messages.fetch(fetchOptions);
                     
-                    // Filter messages to delete: bot messages + user interaction responses
+                    if (fetched.size === 0) break;
+
+                    // Filter messages to delete: bot messages + user interaction responses + old casino results
                     const messagesToDelete = fetched.filter((msg) => {
-                        // Delete bot messages
+                        const messageAge = Date.now() - msg.createdTimestamp;
+                        const isOld = messageAge > 14 * 24 * 60 * 60 * 1000; // Older than 14 days
+                        
+                        // Always delete bot messages
                         if (msg.author.id === client.user.id) {
                             return true;
                         }
                         
-                        // Delete user messages that are bot interaction responses (contains bot interaction indicators)
-                        if (msg.author.bot === false && msg.content) {
+                        // Delete user messages that contain bot interaction patterns
+                        if (msg.author.bot === false) {
                             const content = msg.content.toLowerCase();
-                            // Check for common bot interaction patterns
-                            if (
-                                content.includes('💎') ||
-                                content.includes('claimed') ||
-                                content.includes('diamonds') ||
-                                content.includes('gift card') ||
-                                content.includes('mining') ||
-                                content.includes('casino') ||
-                                content.includes('leaderboard') ||
-                                msg.embeds.length > 0 || // Messages with embeds are likely bot responses
-                                msg.components.length > 0 // Messages with buttons/components
-                            ) {
+                            const hasEmbeds = msg.embeds.length > 0;
+                            const hasComponents = msg.components.length > 0;
+                            
+                            // Check for bot interaction indicators
+                            const botPatterns = [
+                                '💎', 'diamonds', 'claimed', 'gift card', 'casino', 
+                                'mining', 'leaderboard', 'streak', 'coinflip', 'dice',
+                                'slots', 'won', 'lost', 'jackpot', 'balance', 'points',
+                                '🎲', '🪙', '🎰', '🎁', '🏆', '⛏️', '🔥'
+                            ];
+                            
+                            const hasBotPattern = botPatterns.some(pattern => 
+                                content.includes(pattern)
+                            );
+                            
+                            // Delete if has bot patterns, embeds, components, or is old user interaction
+                            if (hasBotPattern || hasEmbeds || hasComponents || isOld) {
                                 return true;
                             }
                         }
@@ -3406,23 +3555,65 @@ async function cleanupOldPanels() {
                     });
 
                     if (messagesToDelete.size > 0) {
-                        // Split into chunks of 100 for bulk delete (Discord limit)
-                        const messageArray = Array.from(messagesToDelete.values());
-                        for (let i = 0; i < messageArray.length; i += 100) {
-                            const chunk = messageArray.slice(i, i + 100);
-                            if (chunk.length > 1) {
-                                await channel.bulkDelete(chunk);
-                            } else if (chunk.length === 1) {
-                                await chunk[0].delete();
+                        // Group messages by age for bulk delete (Discord only allows bulk delete for messages < 14 days)
+                        const recentMessages = [];
+                        const oldMessages = [];
+                        
+                        messagesToDelete.forEach(msg => {
+                            const messageAge = Date.now() - msg.createdTimestamp;
+                            if (messageAge < 14 * 24 * 60 * 60 * 1000) {
+                                recentMessages.push(msg);
+                            } else {
+                                oldMessages.push(msg);
+                            }
+                        });
+
+                        // Bulk delete recent messages
+                        if (recentMessages.length > 1) {
+                            // Split into chunks of 100 for bulk delete
+                            for (let i = 0; i < recentMessages.length; i += 100) {
+                                const chunk = recentMessages.slice(i, i + 100);
+                                if (chunk.length > 1) {
+                                    await channel.bulkDelete(chunk);
+                                } else if (chunk.length === 1) {
+                                    await chunk[0].delete().catch(() => {});
+                                }
+                                await new Promise(resolve => setTimeout(resolve, 1000)); // Rate limit protection
+                            }
+                        } else if (recentMessages.length === 1) {
+                            await recentMessages[0].delete().catch(() => {});
+                        }
+
+                        // Individual delete for old messages
+                        for (const msg of oldMessages) {
+                            try {
+                                await msg.delete();
+                                await new Promise(resolve => setTimeout(resolve, 500)); // Rate limit protection
+                            } catch (error) {
+                                // Ignore delete errors for old messages
                             }
                         }
+
                         totalCleanedMessages += messagesToDelete.size;
                     }
-                } while (fetched.size === 100); // Continue if we got a full batch
+
+                    // Set lastMessageId for next iteration
+                    lastMessageId = fetched.last()?.id;
+                    
+                    // Break if we didn't fetch a full batch
+                    if (fetched.size < 100) break;
+                    
+                    // Small delay to avoid rate limits
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
 
                 if (totalCleanedMessages > 0) {
                     console.log(
-                        `✅ Deleted ${totalCleanedMessages} messages (bot + user interactions) from ${channel.name || channelId}`,
+                        `✅ Deep cleaned ${totalCleanedMessages} messages (including old interactions) from ${channel.name || channelId}`,
+                    );
+                } else {
+                    console.log(
+                        `✅ Channel ${channel.name || channelId} was already clean`,
                     );
                 }
             } catch (error) {
@@ -3434,7 +3625,7 @@ async function cleanupOldPanels() {
         }
     }
 
-    console.log("✅ Channel cleanup completed - All channels are now fresh!");
+    console.log("✅ Enhanced channel cleanup completed - All old interactions removed!");
 }
 
 // With this (hardcoded, as requested):
