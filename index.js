@@ -3243,7 +3243,7 @@ async function cleanupOldPanels() {
 client.login(
     "",
 );
-
+//
 // Recommended secure approach (using environment variable):
 client.login(process.env.DISCORD_TOKEN);
 
