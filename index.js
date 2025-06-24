@@ -820,361 +820,57 @@ async function handleGiftCardSelection(interaction) {
             ephemeral: true });
     }
 
-    // Check if user\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n```')
-        .setColor(0xFFD700);
-
-    const medals = ['🥇', '🥈', '🥉'];
-    const trophyDesign = ['👑', '💎', '⭐'];
-
-    for (let i = 0; i < sortedUsers.length; i++) {
-        const [userId, data] = sortedUsers[i];
-        let userDisplay;
-
-        try {
-            const user = await client.users.fetch(userId);
-            userDisplay = `@${user.username}`;
-        } catch {
-            userDisplay = `User ${userId}`;
-        }
-
-        const position = i + 1;
-        const positionEmoji = position <= 3 ? medals[position - 1] : `${position}.`;
-        const decoration = position <= 3 ? trophyDesign[position - 1] : '💎';
-
-        embed.addFields({
-            name: `${positionEmoji} ${userDisplay}`,
-            value: `${decoration} ${data.points.toLocaleString()} Diamonds\n🔥 ${data.streak} day streak`,
-            inline: false
-        });
-    }
-
-    await interaction.reply({ embeds: [embed] });
-}
-
-async function handleDropPoints(interaction) {
-    const dropChannel = client.channels.cache.get(CHANNELS.point_drops);
-    if (!dropChannel) {
-        return await interaction.reply({ content: '❌ Point drops channel not found!', ephemeral: true });
-    }
-
-    const embed = new EmbedBuilder()
-        .setTitle('⏳ Admin Point Drop Starting!')
-        .setDescription('**3D Drop Preview:**\n```\n     💎💎💎\n    ╱ ╲ ╱ ╲\n   ╱   ╲   ╲\n  ╱_____╲___╲\n```\nGet ready! Claiming starts in 5 minutes!')
-        .setFooter({ text: `Triggered by ${interaction.user.displayName}` })
-        .setColor(0xFFA500);
-
-    const button = new ActionRowBuilder()
-        .addComponents(
-            new ButtonBuilder()
-                .setCustomId('claim_drop')
-                .setLabel('Waiting to Start...')
-                .setStyle(ButtonStyle.Secondary)
-                .setEmoji('⏳')
-                .setDisabled(true)
-        );
-
-    await dropChannel.send({ embeds: [embed], components: [button] });
-    await interaction.reply({ content: `✅ Point drop session started in <#${CHANNELS.point_drops}>!`, ephemeral: true });
-}
-
-async function handleSendDailyClaim(interaction) {
-    const dailyChannel = client.channels.cache.get(CHANNELS.daily_claims);
-    if (!dailyChannel) {
-        return await interaction.reply({ content: '❌ Daily claims channel not found!', ephemeral: true });
-    }
-
-    const embed = new EmbedBuilder()
-        .setTitle('💎 Daily Diamond Claim Available!')
-        .setDescription('**Daily Diamond Reward:**\n```\n╔═══════════╗\n║   💎 50   ║\n║  ╔═════╗  ║\n║  ║ ✨ ✨ ║  ║\n║  ╚═════╝  ║\n╚═══════════╝\n```\n**Your daily diamonds are ready!**\n\nClick the button below to claim your diamonds and maintain your streak!')
-        .addFields(
-            { name: '💰 Base Reward', value: '50 💎', inline: true },
-            { name: '🔥 Streak Bonus', value: 'Up to 3x multiplier!', inline: true },
-            { name: '⏰ Manual Trigger', value: 'Admin activated', inline: true }
-        )
-        .setFooter({ text: `Triggered by ${interaction.user.displayName}` })
-        .setColor(0xFFD700);
-
-    const component = createDailyClaimButtons();
-    await dailyChannel.send({ embeds: [embed], components: [component] });
-    await interaction.reply({ content: `✅ Daily claim button sent to <#${CHANNELS.daily_claims}>!`, ephemeral: true });
-}
-
-async function handleTestDM(interaction) {
-    // Check if in correct channel
-    if (interaction.channelId !== CHANNELS.gift_cards) {
-        const embed = new EmbedBuilder()
-            .setTitle('❌ Wrong Channel')
-            .setDescription(`Please use this command in <#${CHANNELS.gift_cards}>`)
-            .setColor(0xFF0000);
-        return await interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-
-    try {
-        const testEmbed = new EmbedBuilder()
-            .setTitle('✅ DM Test Successful!')
-            .setDescription('**🔔 This is a test message!**\n\nYour DMs are working perfectly! 🎉\n\n**This means:**\n• You can receive gift card notifications\n• Reward processing will work smoothly\n• All future communications will reach you')
-            .addFields(
-                { name: '📧 Status', value: 'DMs Enabled ✅', inline: true },
-                { name: '🎁 Gift Cards', value: 'Ready to Receive', inline: true },
-                { name: '🔔 Notifications', value: 'All Set Up', inline: true }
-            )
-            .setFooter({ text: 'Gift Card Redemption System - Test Complete' })
-            .setColor(0x00FF00);
-
-        await interaction.user.send({ embeds: [testEmbed] });
-
-        const successEmbed = new EmbedBuilder()
-            .setTitle('✅ DM Test Successful!')
-            .setDescription('Check your DMs! The test message was sent successfully. 📧\n\nYou\'re all set to receive gift card notifications!')
-            .setColor(0x00FF00);
-
-        await interaction.reply({ embeds: [successEmbed], ephemeral: true });
-    } catch (error) {
-        const failEmbed = new EmbedBuilder()
-            .setTitle('❌ DM Test Failed')
-            .setDescription('**Could not send you a DM!**\n\n**To fix this:**\n1. Go to **User Settings** ⚙️\n2. Navigate to **Privacy & Safety**\n3. Enable **"Allow direct messages from server members"**\n4. Try the test again\n\n**⚠️ Important:** You need DMs enabled to receive gift card confirmations!')
-            .setColor(0xFF0000);
-
-        await interaction.reply({ embeds: [failEmbed], ephemeral: true });
-    }
-}
-
-async function handleConvertPoints(interaction) {
-    // Check if in correct channel
-    if (interaction.channelId !== CHANNELS.gift_cards) {
-        const embed = new EmbedBuilder()
-            .setTitle('❌ Wrong Channel')
-            .setDescription(`Please use this command in <#${CHANNELS.gift_cards}>`)
-            .setColor(0xFF0000);
-        return await interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-
-    const userData = pointsSystem.getUserData(interaction.user.id);
-
-    const embed = new EmbedBuilder()
-        .setTitle('🎁 Convert Points to Gift Cards')
-        .setDescription(`**Your Current Balance:** ${userData.points} 💎\n\n**🎫 GIFT CARD CONVERSION CENTER 🎫**\n\`\`\`\n╔═══════════════════════╗\n║  💎 ➤ 🎁 CONVERTER 🎁 ║\n║═══════════════════════║\n║   Transform your      ║\n║   diamonds into       ║\n║   real rewards!       ║\n╚═══════════════════════╝\n\`\`\`\n**Available Gift Cards:**`)
-        .setColor(0xFFD700);
-
-    // Show available gift cards with affordability
-    Object.entries(GIFT_CARDS).forEach(([type, card]) => {
-        const affordable = userData.points >= card.cost ? '✅ Available' : '❌ Need more diamonds';
-        const deficit = userData.points >= card.cost ? '' : ` (Need ${card.cost - userData.points} more 💎)`;
-        embed.addFields({ 
-            name: `${card.emoji} ${card.name}`, 
-            value: `${affordable}\n**Cost:** ${card.cost} 💎${deficit}`, 
-            inline: true 
-        });
-    });
-
-    const component = createGiftCardSelect();
-    await interaction.reply({ embeds: [embed], components: [component] });
-}
-
-async function handleConvertGiftCard(interaction) {
-    // Check if in correct channel
-    if (interaction.channelId !== CHANNELS.gift_cards) {
-        const embed = new EmbedBuilder()
-            .setTitle('❌ Wrong Channel')
-            .setDescription(`Please use this command in <#${CHANNELS.gift_cards}>`)
-            .setColor(0xFF0000);
-        return await interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-
-    const userData = pointsSystem.getUserData(interaction.user.id);
-
-    if (!userData.gift_cards_redeemed || userData.gift_cards_redeemed.length === 0) {
-        const embed = new EmbedBuilder()
-            .setTitle('❌ No Gift Cards to Convert')
-            .setDescription('**You don\'t have any gift cards to convert back to points.**\n\n**How to get gift cards:**\n• Use `/convert_points` to buy gift cards\n• Redeem them first, then convert back if needed\n\n**Note:** Only unused gift cards can be converted back.')
-            .setColor(0xFF0000);
-        return await interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-
-    // Calculate total value of redeemed gift cards
-    const totalValue = userData.gift_cards_redeemed.reduce((sum, card) => sum + card.cost, 0);
-    const conversionRate = 0.8; // 80% return rate
-    const returnPoints = Math.floor(totalValue * conversionRate);
-
-    const embed = new EmbedBuilder()
-        .setTitle('🔄 Convert Gift Cards to Points')
-        .setDescription(`**🎁 ➤ 💎 REVERSE CONVERTER**\n\`\`\`\n╔═══════════════════════╗\n║  🎁 ➤ 💎 REFUND 💎     ║\n║═══════════════════════║\n║   Convert unused      ║\n║   gift cards back     ║\n║   to diamonds         ║\n╚═══════════════════════╝\n\`\`\``)
-        .addFields(
-            { name: '🎁 Your Gift Cards', value: `${userData.gift_cards_redeemed.length} cards`, inline: true },
-            { name: '💰 Total Value', value: `${totalValue} 💎`, inline: true },
-            { name: '🔄 Return Amount', value: `${returnPoints} 💎 (80%)`, inline: true }
-        )
-        .setFooter({ text: 'Note: 20% processing fee applies | This action cannot be undone' })
-        .setColor(0x0099FF);
-
-    // Add convert button
-    const convertButton = new ActionRowBuilder()
-        .addComponents(
-            new ButtonBuilder()
-                .setCustomId('confirm_convert_back')
-                .setLabel(`Convert ${userData.gift_cards_redeemed.length} Cards → ${returnPoints} 💎`)
-                .setStyle(ButtonStyle.Danger)
-                .setEmoji('🔄')
-        );
-
-    await interaction.reply({ embeds: [embed], components: [convertButton], ephemeral: true });
-}
-
-async function handleOpenGiftTicket(interaction) {
-    const userData = pointsSystem.getUserData(interaction.user.id);
-
-    const embed = new EmbedBuilder()
-        .setTitle('🎫 Gift Card Support Ticket')
-        .setDescription(`**Welcome to Gift Card Support!**\n\n**🎁 TICKET SYSTEM 🎁**\n\`\`\`\n╔═══════════════════════╗\n║  🎫 SUPPORT TICKET 🎫 ║\n║═══════════════════════║\n║   Your dedicated      ║\n║   gift card helper    ║\n╚═══════════════════════╝\n\`\`\`\n**Your Information:**\n• **Balance:** ${userData.points} 💎\n• **Total Earned:** ${userData.total_earned} 💎\n• **Gift Cards:** ${userData.gift_cards_redeemed?.length || 0} redeemed\n\n**🔗 Quick Actions:**`)
-        .addFields(
-            { name: '💎 Convert Points', value: 'Use `/convert_points`\nTurn diamonds into gift cards', inline: true },
-            { name: '🔄 Convert Back', value: 'Use `/convert_giftcard`\nTurn gift cards to diamonds', inline: true },
-            { name: '📧 Test DMs', value: 'Use `/test_dm`\nEnsure you can receive rewards', inline: true }
-        )
-        .setFooter({ text: 'Need help? Contact an administrator for assistance!' })
-        .setColor(0x9966CC);
-
-    await interaction.reply({ embeds: [embed], ephemeral: true });
-}
-
-async function handleSendGiftCardPanel(interaction) {
-    const giftCardChannel = client.channels.cache.get(CHANNELS.gift_cards);
-    if (!giftCardChannel) {
-        return await interaction.reply({ content: '❌ Gift card channel not found!', ephemeral: true });
-    }
-
-    const embed = new EmbedBuilder()
-        .setTitle('🎁 Gift Card Redemption Center')
-        .setDescription('**Welcome to the Official Gift Card Hub!**\n\n**🎫 REDEMPTION CENTER 🎫**\n\`\`\`\n╔═══════════════════════╗\n║  🎁 GIFT CARD HUB 🎁  ║\n║═══════════════════════║\n║                       ║\n║   🎁 PCRP  💎 500     ║\n║                       ║\n╚═══════════════════════╝\n\`\`\`\n**🔗 Available Commands:**\n• `/test_dm` - Test if bot can DM you\n• `/convert_points` - Convert diamonds to gift cards\n• `/convert_giftcard` - Convert gift cards back to diamonds\n\n**📋 How it works:**\n1. **Test your DMs** first with `/test_dm`\n2. **Convert points** using `/convert_points`\n3. **Get support** by opening a ticket below')
-        .addFields(
-            { name: '💎 Minimum Requirements', value: '500 💎 (PCRP)', inline: true },
-            { name: '🏆 Exclusive Reward', value: '🎁 PCRP Gift Cards', inline: true },
-            { name: '⚡ Instant Processing', value: 'DM notifications enabled', inline: true }
-        )
-        .setFooter({ text: '🎁 Transform your gaming achievements into real rewards!' })
-        .setColor(0xFF6B6B);
-
-    const components = createGiftCardPanelButtons();
-    await giftCardChannel.send({ embeds: [embed], components: [components] });
-    await interaction.reply({ content: `✅ Gift card panel sent to <#${CHANNELS.gift_cards}>!`, ephemeral: true });
-}
-
-async function handleConfirmConvertBack(interaction) {
-    const userData = pointsSystem.getUserData(interaction.user.id);
-
-    if (!userData.gift_cards_redeemed || userData.gift_cards_redeemed.length === 0) {
-        const embed = new EmbedBuilder()
-            .setTitle('❌ No Gift Cards Found')
-            .setDescription('You don\'t have any gift cards to convert back!')
-            .setColor(0xFF0000);
-        return await interaction.update({ embeds: [embed], components: [] });
-    }
-
-    // Calculate refund
-    const totalValue = userData.gift_cards_redeemed.reduce((sum, card) => sum + card.cost, 0);
-    const conversionRate = 0.8;
-    const returnPoints = Math.floor(totalValue * conversionRate);
-
-    // Process the conversion
-    userData.points += returnPoints;
-    userData.total_earned += returnPoints;
-    userData.gift_cards_redeemed = []; // Clear all gift cards
-
-    const embed = new EmbedBuilder()
-        .setTitle('✅ Gift Cards Converted Successfully!')
-        .setDescription(`**🔄 CONVERSION COMPLETE 🔄**\n\n**Converted:** All your gift cards\n**Received:** ${returnPoints} 💎\n**New Balance:** ${userData.points} 💎\n\n**Transaction Details:**\n• Original Value: ${totalValue} 💎\n• Conversion Rate: 80%\n• Processing Fee: 20%`)
-        .setColor(0x00FF00);
-
-    await interaction.update({ embeds: [embed], components: [] });
-    await pointsSystem.saveData();
-
-    // Send DM confirmation
-    try {
-        const dmEmbed = new EmbedBuilder()
-            .setTitle('🔄 Gift Card Conversion Complete')
-            .setDescription(`You successfully converted your gift cards back to diamonds!\n\n**Received:** ${returnPoints} 💎\n**New Balance:** ${userData.points} 💎`)
-            .setColor(0x00FF00);
-        await interaction.user.send({ embeds: [dmEmbed] });
-    } catch (error) {
-        console.log('Could not send conversion DM to user');
-    }
-}
-
-async function sendStartupPanels() {
-    console.log('🔄 Cleaning old panels and sending fresh ones...');
-
-    // Auto-cleanup old bot messages to prevent duplicates
-    await cleanupOldPanels();
-
-    // Daily claims panel
-    const dailyChannel = client.channels.cache.get(CHANNELS.daily_claims);
-    if (dailyChannel) {
-        const embed = new EmbedBuilder()
-            .setTitle('💎 24H Daily Diamond Claim Center')
-            .setDescription('**Daily Diamond Reward:**\n```\n╔═══════════╗\n║   💎 50   ║\n║  ╔═════╗  ║\n║  ║ ✨ ✨ ║  ║\n║  ╚═════╝  ║\n╚═══════════╝\n```\n**Your daily diamonds are ready!**\n\nClick the button below to claim your diamonds and maintain your streak!')
-            .addFields(
-                { name: '💰 Base Reward', value: '50 💎', inline: true },
-                { name: '🔥 Streak Bonus', value: 'Up to 3x multiplier!', inline: true },
-                { name: '⏰ Auto Refresh', value: 'Reconnected & Ready!', inline: true }
-            )
-            .setFooter({ text: '🤖 Auto-started by bot | All data preserved' })
+    // Check if user
+\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n```')
             .setColor(0xFFD700);
 
-        const component = createDailyClaimButtons();
-        await dailyChannel.send({ embeds: [embed], components: [component] });
+        const medals = ['🥇', '🥈', '🥉'];
+        const trophyDesign = ['👑', '💎', '⭐'];
 
-        // Send ping notification
-        await dailyChannel.send('🔔 **BOT RECONNECTED!** All your diamonds and streaks are safe!');
-        console.log('✅ Daily claim panel sent + ping notification');
+        for (let i = 0; i < Math.min(sortedUsers.length, 10); i++) {
+            const [userId, data] = sortedUsers[i];
+            let userDisplay;
+
+            try {
+                const user = await client.users.fetch(userId);
+                userDisplay = `@${user.username}`;
+            } catch {
+                userDisplay = `User ${userId}`;
+            }
+
+            const position = i + 1;
+            const positionEmoji = position <= 3 ? medals[position - 1] : `${position}.`;
+            const decoration = position <= 3 ? trophyDesign[position - 1] : '💎';
+
+            embed.addFields({
+                name: `${positionEmoji} ${userDisplay}`,
+                value: `${decoration} ${data.points.toLocaleString()} Diamonds\n🔥 ${data.streak} day streak`,
+                inline: false
+            });
+        }
+
+        await leaderboardChannel.send({ embeds: [embed] });
+        console.log('✅ Leaderboard panel sent');
     }
+}
 
-    // Gambling panel
-    const gamblingChannel = client.channels.cache.get(CHANNELS.gambling);
-    if (gamblingChannel) {
-        const embed = new EmbedBuilder()
-            .setTitle('🎰 Diamond Casino - Gambling Hub')
-            .setDescription('**Welcome Back to the Casino!**\n```\n🎲 ╔═══════════╗ 🪙\n  ║  CASINO   ║\n  ║ ═════════ ║\n  ║ 💎 GAMES 💎 ║\n  ╚═══════════╝\n```\n🎰 Play dice, coinflip, and slots!\n💰 Convert points and win big!\n🎁 Redeem gift cards for real prizes!\n\n🎰 Enjoy our casino games! Have fun!')
-            .addFields(
-                { name: '🎲 Dice Game', value: '• 5x multiplier', inline: true },
-                { name: '🪙 Coinflip', value: '• 2x multiplier', inline: true },
-                { name: '🎰 Lucky Slots', value: '• Jackpot spins', inline: true }
-            )
-            .setFooter({ text: '🎰 Auto-started by bot | All data preserved' })
-            .setColor(0x800080);
+async function cleanupOldPanels() {
+    // Function to cleanup old bot messages to prevent duplicates
+    const channels = [CHANNELS.daily_claims, CHANNELS.gambling, CHANNELS.gift_cards, CHANNELS.leaderboard];
 
-        const components = createGamblingButtons();
-        await gamblingChannel.send({ embeds: [embed], components });
-
-        // Send ping notification
-        await gamblingChannel.send('🎰 **CASINO REOPENED!** All games are back online!');
-        console.log('✅ Gambling panel sent + ping notification');
+    for (const channelId of channels) {
+        const channel = client.channels.cache.get(channelId);
+        if (channel) {
+            try {
+                const messages = await channel.messages.fetch({ limit: 10 });
+                const botMessages = messages.filter(msg => msg.author.id === client.user.id);
+                if (botMessages.size > 0) {
+                    await channel.bulkDelete(botMessages);
+                }
+            } catch (error) {
+                console.log(`Could not cleanup channel ${channelId}:`, error.message);
+            }
+        }
     }
-
-    // Gift card panel
-    const giftCardChannel = client.channels.cache.get(CHANNELS.gift_cards);
-    if (giftCardChannel) {
-        const embed = new EmbedBuilder()
-            .setTitle('🎁 Gift Card Redemption Center')
-            .setDescription('**Welcome to the Official Gift Card Hub!**\n\n**🎫 REDEMPTION CENTER 🎫**\n```\n╔═══════════════════════╗\n║  🎁 GIFT CARD HUB 🎁  ║\n║═══════════════════════║\n║                       ║\n║   🎁 PCRP  💎 500     ║\n║                       ║\n╚═══════════════════════╝\n```\n**🔗 Available Commands:**\n• `/test_dm` - Test if bot can DM you\n• `/convert_points` - Convert diamonds to gift cards\n• `/convert_giftcard` - Convert gift cards back to diamonds\n\n**📋 How it works:**\n1. **Test your DMs** first with `/test_dm`\n2. **Convert points** using `/convert_points`\n3. **Get support** by opening a ticket below')
-            .addFields(
-                { name: '💎 Minimum Requirements', value: '500 💎 (PCRP)', inline: true },
-                { name: '🏆 Exclusive Reward', value: '🎁 PCRP Gift Cards', inline: true },
-                { name: '⚡ Instant Processing', value: 'DM notifications enabled', inline: true }
-            )
-            .setFooter({ text: '🎁 Auto-started by bot | All data preserved' })
-            .setColor(0xFF6B6B);
-
-        const components = createGiftCardPanelButtons();
-        await giftCardChannel.send({ embeds: [embed], components: [components] });
-        console.log('✅ Gift card panel sent');
-    }
-
-    // Leaderboard panel
-    const leaderboardChannel = client.channels.cache.get(CHANNELS.leaderboard);
-    if (leaderboardChannel) {
-        const users = Object.entries(pointsSystem.data.users);
-        const sortedUsers = users.sort(([, a], [, b]) => b.points - a.points);
-
-        const embed = new EmbedBuilder()
-            .setTitle('🏆 Diamond Points Leaderboard')
-            .setDescription('**Top Diamond Elites:**\n```\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n```')
+}
+client.login(process.env.BOT_TOKEN);
