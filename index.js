@@ -1635,6 +1635,11 @@ async function handleButtonInteraction(interaction) {
                 break;
         }
 
+        // Handle UNO ticket submission
+        if (customId === "uno_ticket_submit") {
+            await handleUnoTicketSubmit(interaction);
+        }
+
         // Handle UNO ticket actions
         if (customId.startsWith("uno_ticket_")) {
             const parts = customId.split("_");
@@ -1688,6 +1693,10 @@ async function handleButtonInteraction(interaction) {
 async function handleSelectMenuInteraction(interaction) {
     if (interaction.customId === "gift_card_select") {
         await handleGiftCardSelection(interaction);
+    } else if (interaction.customId === "uno_ai_mode_select") {
+        await handleUnoAIModeSelect(interaction);
+    } else if (interaction.customId === "uno_max_players_select") {
+        await handleUnoMaxPlayersSelect(interaction);
     }
 }
 
@@ -3864,6 +3873,155 @@ async function showUserCommands(interaction) {
                 console.log(
                     "Could not delete user commands information:",
                     error.message,
+
+async function handleUnoAIModeSelect(interaction) {
+    const selectedMode = interaction.values[0];
+    
+    if (!global.tempUnoTickets) global.tempUnoTickets = new Map();
+    const tempData = global.tempUnoTickets.get(interaction.user.id) || {};
+    tempData.aiMode = selectedMode;
+    global.tempUnoTickets.set(interaction.user.id, tempData);
+
+    const modeNames = {
+        "none": "👥 Human Only",
+        "easy": "🎲 Easy AI", 
+        "medium": "🎯 Medium AI",
+        "hard": "🎮 Hard AI",
+        "expert": "🤖 Expert AI",
+        "mixed": "🎭 Mixed AI"
+    };
+
+    await interaction.reply({
+        content: `✅ AI Mode set to: ${modeNames[selectedMode]}!`,
+        ephemeral: true
+    });
+}
+
+async function handleUnoMaxPlayersSelect(interaction) {
+    const selectedPlayers = parseInt(interaction.values[0]);
+    
+    if (!global.tempUnoTickets) global.tempUnoTickets = new Map();
+    const tempData = global.tempUnoTickets.get(interaction.user.id) || {};
+    tempData.maxPlayers = selectedPlayers;
+    global.tempUnoTickets.set(interaction.user.id, tempData);
+
+    await interaction.reply({
+        content: `✅ Maximum players set to: ${selectedPlayers}!`,
+        ephemeral: true
+    });
+}
+
+async function handleUnoTicketSubmit(interaction) {
+    if (!global.tempUnoTickets) global.tempUnoTickets = new Map();
+    const tempData = global.tempUnoTickets.get(interaction.user.id);
+
+    if (!tempData || !tempData.betAmount || !tempData.aiMode || !tempData.maxPlayers) {
+        return await interaction.reply({
+            content: "❌ Please complete all selections: bet amount (modal), AI mode (dropdown), and max players (dropdown)!",
+            ephemeral: true
+        });
+    }
+
+    // Check if user has enough diamonds
+    const userData = pointsSystem.getUserData(interaction.user.id);
+    if (userData.points < tempData.betAmount) {
+        return await interaction.reply({
+            content: `❌ You need ${tempData.betAmount} 💎 but only have ${userData.points} 💎!`,
+            ephemeral: true,
+        });
+    }
+
+    // Create ticket
+    const ticketId = generateUnoTicketId();
+    const ticket = {
+        id: ticketId,
+        creatorId: interaction.user.id,
+        betAmount: tempData.betAmount,
+        aiMode: tempData.aiMode,
+        maxPlayers: tempData.maxPlayers,
+        description: "UNO Game Session",
+        players: [interaction.user.id],
+        status: "open",
+        createdAt: new Date().toISOString(),
+        channelId: interaction.channelId,
+    };
+
+    unoTickets.set(ticketId, ticket);
+
+    // Deduct bet from creator
+    userData.points -= tempData.betAmount;
+    userData.total_spent += tempData.betAmount;
+    await pointsSystem.saveData();
+
+    // Clear temp data
+    global.tempUnoTickets.delete(interaction.user.id);
+
+    const modeNames = {
+        "none": "Human Only",
+        "easy": "Easy AI", 
+        "medium": "Medium AI",
+        "hard": "Hard AI",
+        "expert": "Expert AI",
+        "mixed": "Mixed AI"
+    };
+
+    const embed = new EmbedBuilder()
+        .setTitle("🎫 UNO Game Ticket Created!")
+        .setDescription(
+            `**🃏 UNO GAMING LOBBY 🃏**\n\`\`\`\n` +
+            `    🎫 TICKET: ${ticketId}\n` +
+            `  ╔═══════════════════╗\n` +
+            `  ║ 💎 Bet: ${tempData.betAmount} 💎/player ║\n` +
+            `  ║ 🤖 AI: ${tempData.aiMode.toUpperCase()}        ║\n` +
+            `  ║ 👥 Players: 1/${tempData.maxPlayers}    ║\n` +
+            `  ╚═══════════════════╝\n` +
+            `\`\`\`\n\n` +
+            `**Game Details:**\n` +
+            `🎫 **Ticket ID:** \`${ticketId}\`\n` +
+            `👑 **Host:** ${interaction.user.displayName}\n` +
+            `💎 **Bet Amount:** ${tempData.betAmount} 💎 per player\n` +
+            `🤖 **AI Mode:** ${modeNames[tempData.aiMode]}\n` +
+            `👥 **Max Players:** ${tempData.maxPlayers}\n\n` +
+            `**Prize Distribution:**\n` +
+            `🥇 **1st Place:** ${Math.floor(tempData.betAmount * tempData.maxPlayers * 0.5)} 💎 (50%)\n` +
+            `🥈 **2nd Place:** ${Math.floor(tempData.betAmount * tempData.maxPlayers * 0.3)} 💎 (30%)\n` +
+            `🥉 **3rd Place:** ${Math.floor(tempData.betAmount * tempData.maxPlayers * 0.2)} 💎 (20%)\n\n` +
+            `**Current Players (1):** ${interaction.user.displayName} ✅\n\n` +
+            `**How to Join:**\n` +
+            `• Click "🎮 Join Game" to pay ${tempData.betAmount} 💎 and join\n` +
+            `• AI bots will be added based on selected mode\n` +
+            `• Game starts when enough players join\n\n` +
+            `⚠️ **Note:** Your ${tempData.betAmount} 💎 bet has been deducted!`,
+        )
+        .setColor(0x00ff00)
+        .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`uno_ticket_join_${ticketId}`)
+            .setLabel("🎮 Join Game")
+            .setStyle(ButtonStyle.Success)
+            .setEmoji("🃏"),
+        new ButtonBuilder()
+            .setCustomId(`uno_ticket_addai_${ticketId}`)
+            .setLabel("🤖 Add AI Bot")
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji("🎯"),
+        new ButtonBuilder()
+            .setCustomId(`uno_ticket_start_${ticketId}`)
+            .setLabel("▶️ Start Game")
+            .setStyle(ButtonStyle.Primary)
+            .setEmoji("🚀"),
+        new ButtonBuilder()
+            .setCustomId(`uno_ticket_cancel_${ticketId}`)
+            .setLabel("❌ Cancel")
+            .setStyle(ButtonStyle.Danger"),
+    );
+
+    await interaction.update({ embeds: [embed], components: [row] });
+}
+
+
                 );
             }
         },
@@ -4974,9 +5132,24 @@ async function handleCreateUnoTicket(interaction) {
         return await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
+    const embed = new EmbedBuilder()
+        .setTitle("🎫 Create UNO Game Ticket")
+        .setDescription(
+            `**Set up your UNO game with the options below:**\n\n` +
+            `💎 **Diamond Bet:** Use the text input to set bet amount (10-1000)\n` +
+            `🤖 **AI Mode:** Choose from dropdown (Human-only or AI difficulty)\n` +
+            `👥 **Max Players:** Select from dropdown (2-10 players)\n\n` +
+            `**Next Steps:**\n` +
+            `1. Fill out the diamond bet amount\n` +
+            `2. Select your preferred AI mode\n` +
+            `3. Choose maximum number of players\n` +
+            `4. Submit to create your game ticket!`
+        )
+        .setColor(0x9932cc);
+
     const modal = new ModalBuilder()
-        .setCustomId("uno_ticket_modal")
-        .setTitle("🎫 Create UNO Game Ticket");
+        .setCustomId("uno_ticket_modal_step1")
+        .setTitle("🎫 UNO Ticket - Diamond Bet");
 
     const betInput = new TextInputBuilder()
         .setCustomId("bet_amount")
@@ -4986,155 +5159,128 @@ async function handleCreateUnoTicket(interaction) {
         .setRequired(true)
         .setMaxLength(4);
 
-    const aiModeInput = new TextInputBuilder()
-        .setCustomId("ai_mode")
-        .setLabel("AI Mode (none/easy/medium/hard/expert/mixed)")
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder("Choose AI difficulty or 'none' for human-only...")
-        .setRequired(true)
-        .setMaxLength(10);
-
-    const maxPlayersInput = new TextInputBuilder()
-        .setCustomId("max_players")
-        .setLabel("Maximum Players (2-10)")
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder("Enter maximum number of players...")
-        .setRequired(true)
-        .setMaxLength(2);
-
-    const gameDescInput = new TextInputBuilder()
-        .setCustomId("game_description")
-        .setLabel("Game Description (Optional)")
-        .setStyle(TextInputStyle.Paragraph)
-        .setPlaceholder("Describe your UNO session...")
-        .setRequired(false)
-        .setMaxLength(200);
-
     modal.addComponents(
-        new ActionRowBuilder().addComponents(betInput),
-        new ActionRowBuilder().addComponents(aiModeInput),
-        new ActionRowBuilder().addComponents(maxPlayersInput),
-        new ActionRowBuilder().addComponents(gameDescInput),
+        new ActionRowBuilder().addComponents(betInput)
     );
 
-    await interaction.showModal(modal);
+    const aiModeSelect = new StringSelectMenuBuilder()
+        .setCustomId("uno_ai_mode_select")
+        .setPlaceholder("🤖 Choose AI Mode...")
+        .addOptions([
+            {
+                label: "👥 Human Only",
+                description: "No AI bots, human players only",
+                value: "none",
+                emoji: "👥"
+            },
+            {
+                label: "🎲 Easy AI",
+                description: "70% play rate, simple strategy",
+                value: "easy",
+                emoji: "🎲"
+            },
+            {
+                label: "🎯 Medium AI",
+                description: "85% play rate, prefers action cards",
+                value: "medium",
+                emoji: "🎯"
+            },
+            {
+                label: "🎮 Hard AI",
+                description: "90% play rate, strategic choices",
+                value: "hard",
+                emoji: "🎮"
+            },
+            {
+                label: "🤖 Expert AI",
+                description: "95% play rate, optimal strategy",
+                value: "expert",
+                emoji: "🤖"
+            },
+            {
+                label: "🎭 Mixed AI",
+                description: "Random AI difficulties",
+                value: "mixed",
+                emoji: "🎭"
+            }
+        ]);
+
+    const maxPlayersSelect = new StringSelectMenuBuilder()
+        .setCustomId("uno_max_players_select")
+        .setPlaceholder("👥 Choose Maximum Players...")
+        .addOptions([
+            { label: "2 Players", value: "2", emoji: "2️⃣" },
+            { label: "3 Players", value: "3", emoji: "3️⃣" },
+            { label: "4 Players", value: "4", emoji: "4️⃣" },
+            { label: "5 Players", value: "5", emoji: "5️⃣" },
+            { label: "6 Players", value: "6", emoji: "6️⃣" },
+            { label: "7 Players", value: "7", emoji: "7️⃣" },
+            { label: "8 Players", value: "8", emoji: "8️⃣" },
+            { label: "9 Players", value: "9", emoji: "9️⃣" },
+            { label: "10 Players", value: "10", emoji: "🔟" }
+        ]);
+
+    const submitButton = new ButtonBuilder()
+        .setCustomId("uno_ticket_submit")
+        .setLabel("🎫 Create Ticket")
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji("🃏");
+
+    const components = [
+        new ActionRowBuilder().addComponents(aiModeSelect),
+        new ActionRowBuilder().addComponents(maxPlayersSelect),
+        new ActionRowBuilder().addComponents(submitButton)
+    ];
+
+    // Store temporary ticket data
+    const tempTicketData = {
+        creatorId: interaction.user.id,
+        betAmount: null,
+        aiMode: null,
+        maxPlayers: null,
+        timestamp: Date.now()
+    };
+
+    // Store in global temp storage (you might want to implement a proper temp storage)
+    if (!global.tempUnoTickets) global.tempUnoTickets = new Map();
+    global.tempUnoTickets.set(interaction.user.id, tempTicketData);
+
+    await interaction.reply({ embeds: [embed], components, ephemeral: true });
+    await interaction.followUp({ modal });
 }
 
 async function handleUnoTicketModal(interaction) {
-    const betAmount = parseInt(interaction.fields.getTextInputValue("bet_amount"));
-    const aiMode = interaction.fields.getTextInputValue("ai_mode").toLowerCase();
-    const maxPlayers = parseInt(interaction.fields.getTextInputValue("max_players"));
-    const gameDescription = interaction.fields.getTextInputValue("game_description") || "Standard UNO Game";
+    if (interaction.customId === "uno_ticket_modal_step1") {
+        const betAmount = parseInt(interaction.fields.getTextInputValue("bet_amount"));
 
-    // Validation
-    if (isNaN(betAmount) || betAmount < 10 || betAmount > 1000) {
-        return await interaction.reply({
-            content: "❌ Bet amount must be between 10 and 1000 diamonds!",
-            ephemeral: true,
+        // Validation
+        if (isNaN(betAmount) || betAmount < 10 || betAmount > 1000) {
+            return await interaction.reply({
+                content: "❌ Bet amount must be between 10 and 1000 diamonds!",
+                ephemeral: true,
+            });
+        }
+
+        // Check if user has enough diamonds
+        const userData = pointsSystem.getUserData(interaction.user.id);
+        if (userData.points < betAmount) {
+            return await interaction.reply({
+                content: `❌ You need ${betAmount} 💎 but only have ${userData.points} 💎!`,
+                ephemeral: true,
+            });
+        }
+
+        // Update temp data
+        if (!global.tempUnoTickets) global.tempUnoTickets = new Map();
+        const tempData = global.tempUnoTickets.get(interaction.user.id) || {};
+        tempData.betAmount = betAmount;
+        global.tempUnoTickets.set(interaction.user.id, tempData);
+
+        await interaction.reply({
+            content: `✅ Bet amount set to ${betAmount} 💎! Now select AI mode and max players from the dropdowns above, then click "Create Ticket".`,
+            ephemeral: true
         });
     }
-
-    if (isNaN(maxPlayers) || maxPlayers < 2 || maxPlayers > 10) {
-        return await interaction.reply({
-            content: "❌ Maximum players must be between 2 and 10!",
-            ephemeral: true,
-        });
-    }
-
-    const validAIModes = ["none", "easy", "medium", "hard", "expert", "mixed"];
-    if (!validAIModes.includes(aiMode)) {
-        return await interaction.reply({
-            content: "❌ AI mode must be: none, easy, medium, hard, expert, or mixed!",
-            ephemeral: true,
-        });
-    }
-
-    // Check if user has enough diamonds
-    const userData = pointsSystem.getUserData(interaction.user.id);
-    if (userData.points < betAmount) {
-        return await interaction.reply({
-            content: `❌ You need ${betAmount} 💎 but only have ${userData.points} 💎!`,
-            ephemeral: true,
-        });
-    }
-
-    // Create ticket
-    const ticketId = generateUnoTicketId();
-    const ticket = {
-        id: ticketId,
-        creatorId: interaction.user.id,
-        betAmount: betAmount,
-        aiMode: aiMode,
-        maxPlayers: maxPlayers,
-        description: gameDescription,
-        players: [interaction.user.id],
-        status: "open",
-        createdAt: new Date().toISOString(),
-        channelId: interaction.channelId,
-    };
-
-    unoTickets.set(ticketId, ticket);
-
-    // Deduct bet from creator
-    userData.points -= betAmount;
-    userData.total_spent += betAmount;
-    await pointsSystem.saveData();
-
-    const embed = new EmbedBuilder()
-        .setTitle("🎫 UNO Game Ticket Created!")
-        .setDescription(
-            `**🃏 UNO GAMING LOBBY 🃏**\n\`\`\`\n` +
-            `    🎫 TICKET: ${ticketId}\n` +
-            `  ╔═══════════════════╗\n` +
-            `  ║ 💎 Bet: ${betAmount} 💎/player ║\n` +
-            `  ║ 🤖 AI: ${aiMode.toUpperCase()}        ║\n` +
-            `  ║ 👥 Players: 1/${maxPlayers}    ║\n` +
-            `  ╚═══════════════════╝\n` +
-            `\`\`\`\n\n` +
-            `**Game Details:**\n` +
-            `🎫 **Ticket ID:** \`${ticketId}\`\n` +
-            `👑 **Host:** ${interaction.user.displayName}\n` +
-            `💎 **Bet Amount:** ${betAmount} 💎 per player\n` +
-            `🤖 **AI Mode:** ${aiMode.charAt(0).toUpperCase() + aiMode.slice(1)}\n` +
-            `👥 **Max Players:** ${maxPlayers}\n` +
-            `📝 **Description:** ${gameDescription}\n\n` +
-            `**Prize Distribution:**\n` +
-            `🥇 **1st Place:** ${Math.floor(betAmount * maxPlayers * 0.5)} 💎 (50%)\n` +
-            `🥈 **2nd Place:** ${Math.floor(betAmount * maxPlayers * 0.3)} 💎 (30%)\n` +
-            `🥉 **3rd Place:** ${Math.floor(betAmount * maxPlayers * 0.2)} 💎 (20%)\n\n` +
-            `**Current Players (1):** ${interaction.user.displayName} ✅\n\n` +
-            `**How to Join:**\n` +
-            `• Click "🎮 Join Game" to pay ${betAmount} 💎 and join\n` +
-            `• AI bots will be added based on selected mode\n` +
-            `• Game starts when enough players join\n\n` +
-            `⚠️ **Note:** Your ${betAmount} 💎 bet has been deducted!`,
-        )
-        .setColor(0x00ff00)
-        .setTimestamp();
-
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId(`uno_ticket_join_${ticketId}`)
-            .setLabel("🎮 Join Game")
-            .setStyle(ButtonStyle.Success)
-            .setEmoji("🃏"),
-        new ButtonBuilder()
-            .setCustomId(`uno_ticket_addai_${ticketId}`)
-            .setLabel("🤖 Add AI Bot")
-            .setStyle(ButtonStyle.Secondary)
-            .setEmoji("🎯"),
-        new ButtonBuilder()
-            .setCustomId(`uno_ticket_start_${ticketId}`)
-            .setLabel("▶️ Start Game")
-            .setStyle(ButtonStyle.Primary)
-            .setEmoji("🚀"),
-        new ButtonBuilder()
-            .setCustomId(`uno_ticket_cancel_${ticketId}`)
-            .setLabel("❌ Cancel")
-            .setStyle(ButtonStyle.Danger),
-    );
-
-    await interaction.reply({ embeds: [embed], components: [row] });
 }
 
 async function handleUnoRulesGuide(interaction) {
