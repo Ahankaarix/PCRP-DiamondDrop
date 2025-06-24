@@ -1,10 +1,10 @@
 {
   "users": {
     "959692217885294632": {
-      "points": 60,
+      "points": 80,
       "last_claim": "2025-06-24T08:14:06.350Z",
       "streak": 1,
-      "total_earned": 60,
+      "total_earned": 80,
       "total_spent": 0,
       "inventory": [],
       "gift_cards_redeemed": []
@@ -19,10 +19,19 @@
       "gift_cards_redeemed": []
     },
     "1230125242517557313": {
-      "points": 55,
+      "points": 45,
       "last_claim": "2025-06-24T19:33:21.658Z",
       "streak": 1,
       "total_earned": 55,
+      "total_spent": 10,
+      "inventory": [],
+      "gift_cards_redeemed": []
+    },
+    "879396413010743337": {
+      "points": 10,
+      "last_claim": null,
+      "streak": 0,
+      "total_earned": 10,
       "total_spent": 0,
       "inventory": [],
       "gift_cards_redeemed": []
