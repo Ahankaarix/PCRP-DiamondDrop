@@ -1,4 +1,3 @@
-
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder, SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const fs = require('fs').promises;
 const path = require('path');
@@ -28,11 +27,7 @@ const CHANNELS = {
 
 // Gift card options
 const GIFT_CARDS = {
-    steam: { name: 'Steam Gift Card', cost: 1000, emoji: '🎮' },
-    amazon: { name: 'Amazon Gift Card', cost: 1500, emoji: '📦' },
-    spotify: { name: 'Spotify Premium', cost: 800, emoji: '🎵' },
-    netflix: { name: 'Netflix Subscription', cost: 1200, emoji: '🎬' },
-    google: { name: 'Google Play Card', cost: 900, emoji: '📱' }
+    pcrp: { name: 'PCRP Gift Card', cost: 500, emoji: '🎁' }
 };
 
 class PointsBot {
@@ -189,7 +184,7 @@ client.once('ready', async () => {
         new SlashCommandBuilder()
             .setName('claim_daily')
             .setDescription('Claim your daily reward and streak bonus'),
-        
+
         new SlashCommandBuilder()
             .setName('get_points')
             .setDescription('Check your points or another user\'s points')
@@ -198,7 +193,7 @@ client.once('ready', async () => {
                     .setDescription('User to check points for')
                     .setRequired(false)
             ),
-        
+
         new SlashCommandBuilder()
             .setName('transfer_points')
             .setDescription('Send points to another user')
@@ -213,41 +208,41 @@ client.once('ready', async () => {
                     .setRequired(true)
                     .setMinValue(1)
             ),
-        
+
         new SlashCommandBuilder()
             .setName('gambling_menu')
             .setDescription('Access the 3D gambling menu with all game options'),
-        
+
         new SlashCommandBuilder()
             .setName('redeem_gift_card')
             .setDescription('Convert your diamonds to gift cards'),
-        
+
         new SlashCommandBuilder()
             .setName('leaderboard')
             .setDescription('View the points leaderboard'),
-        
+
         new SlashCommandBuilder()
             .setName('drop_points')
             .setDescription('Admin: Start a point drop session')
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-        
+
         new SlashCommandBuilder()
             .setName('send_daily_claim')
             .setDescription('Admin: Manually send daily claim button to channel')
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-        
+
         new SlashCommandBuilder()
             .setName('test_dm')
             .setDescription('Test if the bot can send you a DM for gift card rewards'),
-        
+
         new SlashCommandBuilder()
             .setName('convert_points')
             .setDescription('Convert your points into a gift card'),
-        
+
         new SlashCommandBuilder()
             .setName('convert_giftcard')
             .setDescription('Convert your gift card back into points'),
-        
+
         new SlashCommandBuilder()
             .setName('send_gift_card_panel')
             .setDescription('Admin: Send the gift card redemption panel')
@@ -326,7 +321,7 @@ async function handleSlashCommand(interaction) {
             .setTitle('❌ Error')
             .setDescription('An error occurred while processing your command.')
             .setColor(0xFF0000);
-        
+
         if (interaction.replied || interaction.deferred) {
             await interaction.editReply({ embeds: [embed] });
         } else {
@@ -719,11 +714,11 @@ async function handleSlotsGame(interaction) {
 
     const symbols = ['🍒', '🍋', '🍊', '💎', '⭐', '🍀'];
     const weights = [30, 25, 20, 15, 8, 2];
-    
+
     function weightedRandom() {
         const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
         let random = Math.random() * totalWeight;
-        
+
         for (let i = 0; i < symbols.length; i++) {
             random -= weights[i];
             if (random <= 0) {
@@ -821,87 +816,7 @@ async function handleGiftCardSelection(interaction) {
             .setTitle('❌ Insufficient Diamonds')
             .setDescription(`You need ${card.cost} 💎 but only have ${userData.points} 💎`)
             .setColor(0xFF0000);
-        return await interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-
-    // Deduct points
-    userData.points -= card.cost;
-    userData.total_spent += card.cost;
-    if (!userData.gift_cards_redeemed) userData.gift_cards_redeemed = [];
-    userData.gift_cards_redeemed.push({
-        type: cardType,
-        name: card.name,
-        cost: card.cost,
-        date: new Date().toISOString()
-    });
-
-    // Send DM to user
-    let dmSent = false;
-    try {
-        const dmEmbed = new EmbedBuilder()
-            .setTitle('🎉 Gift Card Redeemed Successfully!')
-            .setDescription(`**${card.name}** has been redeemed!\n\n**Details:**\n• Cost: ${card.cost} 💎\n• Date: ${new Date().toLocaleString()}\n• Remaining Diamonds: ${userData.points} 💎`)
-            .addFields({ name: '📧 Next Steps', value: 'An administrator will contact you within 24 hours to process your gift card delivery. Please keep this message for reference.', inline: false })
-            .setFooter({ text: 'Thank you for using our points system!' })
-            .setColor(0x00FF00);
-
-        await interaction.user.send({ embeds: [dmEmbed] });
-        dmSent = true;
-    } catch (error) {
-        console.log('Could not send DM to user');
-    }
-
-    // Store request for admin processing
-    pointsSystem.data.gift_card_requests[interaction.user.id] = {
-        user_id: interaction.user.id,
-        username: interaction.user.displayName,
-        card_type: cardType,
-        card_name: card.name,
-        cost: card.cost,
-        timestamp: new Date().toISOString(),
-        status: 'pending'
-    };
-
-    // Response embed
-    const embed = new EmbedBuilder()
-        .setTitle('✅ Gift Card Redeemed!')
-        .setDescription(`Successfully redeemed **${card.name}**!`)
-        .addFields(
-            { name: 'Cost', value: `${card.cost} 💎`, inline: true },
-            { name: 'Remaining', value: `${userData.points} 💎`, inline: true }
-        )
-        .setColor(0x00FF00);
-
-    if (dmSent) {
-        embed.addFields({ name: '📧 Check DM', value: 'Details sent to your DM!', inline: false });
-    } else {
-        embed.addFields({ name: '⚠️ DM Failed', value: "Couldn't send DM. Please enable DMs from server members.", inline: false });
-    }
-
-    await interaction.reply({ embeds: [embed], ephemeral: true });
-    await pointsSystem.saveData();
-}
-
-async function handleLeaderboard(interaction) {
-    const allowedChannels = [CHANNELS.leaderboard];
-    if (CHANNELS.general) allowedChannels.push(CHANNELS.general);
-
-    if (!allowedChannels.includes(interaction.channelId)) {
-        const embed = new EmbedBuilder()
-            .setTitle('❌ Wrong Channel')
-            .setDescription(`Please use this command in <#${CHANNELS.leaderboard}>${CHANNELS.general ? ` or <#${CHANNELS.general}>` : ''}`)
-            .setColor(0xFF0000);
-        return await interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-
-    const usersData = pointsSystem.data.users;
-    const sortedUsers = Object.entries(usersData)
-        .sort(([,a], [,b]) => b.points - a.points)
-        .slice(0, 10);
-
-    const embed = new EmbedBuilder()
-        .setTitle('🏆 3D Diamond Leaderboard')
-        .setDescription('**Top 10 Richest Players**\n```\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n```')
+        return await interaction.reply({ embeds: [embed],\n    🏆 LEADERBOARD 🏆\n  ╔═══════════════════╗\n  ║ 👑 DIAMOND ELITE 👑 ║\n  ╚═══════════════════╝\n```')
         .setColor(0xFFD700);
 
     const medals = ['🥇', '🥈', '🥉'];
@@ -910,7 +825,7 @@ async function handleLeaderboard(interaction) {
     for (let i = 0; i < sortedUsers.length; i++) {
         const [userId, data] = sortedUsers[i];
         let userDisplay;
-        
+
         try {
             const user = await client.users.fetch(userId);
             userDisplay = `@${user.username}`;
@@ -1063,7 +978,7 @@ async function handleConvertGiftCard(interaction) {
     }
 
     const userData = pointsSystem.getUserData(interaction.user.id);
-    
+
     if (!userData.gift_cards_redeemed || userData.gift_cards_redeemed.length === 0) {
         const embed = new EmbedBuilder()
             .setTitle('❌ No Gift Cards to Convert')
@@ -1126,10 +1041,10 @@ async function handleSendGiftCardPanel(interaction) {
 
     const embed = new EmbedBuilder()
         .setTitle('🎁 Gift Card Redemption Center')
-        .setDescription('**Welcome to the Official Gift Card Hub!**\n\n**🎫 REDEMPTION CENTER 🎫**\n\`\`\`\n╔═══════════════════════╗\n║  🎁 GIFT CARD HUB 🎁  ║\n║═══════════════════════║\n║ 🎮 Steam     💎 1000  ║\n║ 📦 Amazon    💎 1500  ║\n║ 🎵 Spotify   💎 800   ║\n║ 🎬 Netflix   💎 1200  ║\n║ 📱 Google    💎 900   ║\n╚═══════════════════════╝\n\`\`\`\n**🔗 Available Commands:**\n• `/test_dm` - Test if bot can DM you\n• `/convert_points` - Convert diamonds to gift cards\n• `/convert_giftcard` - Convert gift cards back to diamonds\n\n**📋 How it works:**\n1. **Test your DMs** first with `/test_dm`\n2. **Convert points** using `/convert_points`\n3. **Get support** by opening a ticket below')
+        .setDescription('**Welcome to the Official Gift Card Hub!**\n\n**🎫 REDEMPTION CENTER 🎫**\n\`\`\`\n╔═══════════════════════╗\n║  🎁 GIFT CARD HUB 🎁  ║\n║═══════════════════════║\n║                       ║\n║   🎁 PCRP  💎 500     ║\n║                       ║\n╚═══════════════════════╝\n\`\`\`\n**🔗 Available Commands:**\n• `/test_dm` - Test if bot can DM you\n• `/convert_points` - Convert diamonds to gift cards\n• `/convert_giftcard` - Convert gift cards back to diamonds\n\n**📋 How it works:**\n1. **Test your DMs** first with `/test_dm`\n2. **Convert points** using `/convert_points`\n3. **Get support** by opening a ticket below')
         .addFields(
-            { name: '💎 Minimum Requirements', value: '800 💎 (Spotify)', inline: true },
-            { name: '🏆 Most Popular', value: '🎮 Steam Gift Cards', inline: true },
+            { name: '💎 Minimum Requirements', value: '500 💎 (PCRP)', inline: true },
+            { name: '🏆 Exclusive Reward', value: '🎁 PCRP Gift Cards', inline: true },
             { name: '⚡ Instant Processing', value: 'DM notifications enabled', inline: true }
         )
         .setFooter({ text: '🎁 Transform your gaming achievements into real rewards!' })
@@ -1142,7 +1057,7 @@ async function handleSendGiftCardPanel(interaction) {
 
 async function handleConfirmConvertBack(interaction) {
     const userData = pointsSystem.getUserData(interaction.user.id);
-    
+
     if (!userData.gift_cards_redeemed || userData.gift_cards_redeemed.length === 0) {
         const embed = new EmbedBuilder()
             .setTitle('❌ No Gift Cards Found')
@@ -1183,7 +1098,7 @@ async function handleConfirmConvertBack(interaction) {
 
 async function sendStartupPanels() {
     console.log('🔄 Cleaning old panels and sending fresh ones...');
-    
+
     // Auto-cleanup old bot messages to prevent duplicates
     await cleanupOldPanels();
 
@@ -1203,7 +1118,7 @@ async function sendStartupPanels() {
 
         const component = createDailyClaimButtons();
         await dailyChannel.send({ embeds: [embed], components: [component] });
-        
+
         // Send ping notification
         await dailyChannel.send('🔔 **BOT RECONNECTED!** All your diamonds and streaks are safe! @everyone');
         console.log('✅ Daily claim panel sent + ping notification');
@@ -1214,95 +1129,4 @@ async function sendStartupPanels() {
     if (gamblingChannel) {
         const embed = new EmbedBuilder()
             .setTitle('🎰 Diamond Casino - Gambling Hub')
-            .setDescription('**Welcome Back to the Casino!**\n```\n🎲 ╔═══════════╗ 🪙\n  ║  CASINO   ║\n  ║ ═════════ ║\n  ║ 💎 GAMES 💎 ║\n  ╚═══════════╝\n```\n**All Games Available:**')
-            .addFields(
-                { name: '🎲 Quick Dice', value: 'Guess 1-6 for 5x payout!\nFill form with number & bet', inline: true },
-                { name: '🪙 Quick Flip', value: 'Heads or Tails for 2x payout!\nFill form with choice & bet', inline: true },
-                { name: '💎 All Progress Saved', value: 'Your diamonds are safe!', inline: false }
-            )
-            .setFooter({ text: '🎰 Casino is back online! All data preserved' })
-            .setColor(0x800080);
-
-        const components = createGamblingButtons();
-        await gamblingChannel.send({ embeds: [embed], components });
-        
-        // Send ping notification
-        await gamblingChannel.send('🎰 **CASINO REOPENED!** All games are back online! @everyone');
-        console.log('✅ Gambling panel sent + ping notification');
-    }
-
-    // Gift card redemption center panel
-    const giftCardChannel = client.channels.cache.get(CHANNELS.gift_cards);
-    if (giftCardChannel) {
-        const embed = new EmbedBuilder()
-            .setTitle('🎁 Gift Card Redemption Center')
-            .setDescription('**Welcome to the Official Gift Card Hub!**\n\n**🎫 REDEMPTION CENTER 🎫**\n\`\`\`\n╔═══════════════════════╗\n║  🎁 GIFT CARD HUB 🎁  ║\n║═══════════════════════║\n║ 🎮 Steam     💎 1000  ║\n║ 📦 Amazon    💎 1500  ║\n║ 🎵 Spotify   💎 800   ║\n║ 🎬 Netflix   💎 1200  ║\n║ 📱 Google    💎 900   ║\n╚═══════════════════════╝\n\`\`\`\n**🔗 Available Commands:**\n• `/test_dm` - Test if bot can DM you\n• `/convert_points` - Convert diamonds to gift cards\n• `/convert_giftcard` - Convert gift cards back to diamonds\n\n**📋 How it works:**\n1. **Test your DMs** first with `/test_dm`\n2. **Convert points** using `/convert_points`\n3. **Get support** by opening a ticket below')
-            .addFields(
-                { name: '💎 Minimum Requirements', value: '800 💎 (Spotify)', inline: true },
-                { name: '🏆 Most Popular', value: '🎮 Steam Gift Cards', inline: true },
-                { name: '⚡ Instant Processing', value: 'DM notifications enabled', inline: true }
-            )
-            .setFooter({ text: '🎁 Transform your gaming achievements into real rewards! | Bot Reconnected' })
-            .setColor(0xFF6B6B);
-
-        const components = createGiftCardPanelButtons();
-        await giftCardChannel.send({ embeds: [embed], components: [components] });
-        
-        // Send ping notification
-        await giftCardChannel.send('🎁 **GIFT CARD CENTER ONLINE!** All conversion services are ready! @everyone');
-        console.log('✅ Gift card panel sent + ping notification');
-    }
-
-    // Send admin notification about successful reconnection
-    console.log('📊 Bot Status: All user data preserved and panels refreshed!');
-}
-
-// New function to clean up old bot panels
-async function cleanupOldPanels() {
-    const channelsToClean = [CHANNELS.daily_claims, CHANNELS.gambling, CHANNELS.gift_cards];
-    
-    for (const channelId of channelsToClean) {
-        const channel = client.channels.cache.get(channelId);
-        if (channel) {
-            try {
-                // Fetch last 10 messages to find old bot panels
-                const messages = await channel.messages.fetch({ limit: 10 });
-                const botMessages = messages.filter(msg => 
-                    msg.author.id === client.user.id && 
-                    (msg.embeds.length > 0 || msg.components.length > 0)
-                );
-
-                // Delete old bot panels (keep max 1 of each type)
-                let deletedCount = 0;
-                for (const [, message] of botMessages) {
-                    if (deletedCount < 2) { // Remove up to 2 old messages per channel
-                        await message.delete().catch(() => {}); // Ignore errors
-                        deletedCount++;
-                    }
-                }
-                
-                if (deletedCount > 0) {
-                    console.log(`🧹 Cleaned ${deletedCount} old panels from channel ${channelId}`);
-                }
-            } catch (error) {
-                console.log(`⚠️ Could not clean channel ${channelId}: ${error.message}`);
-            }
-        }
-    }
-}
-
-// Start the bot
-const token = process.env.DISCORD_BOT_TOKEN;
-if (!token) {
-    console.error('❌ Error: DISCORD_BOT_TOKEN not found in environment variables!');
-    console.error('Please add your bot token in the Secrets tab (🔒 icon in sidebar)');
-    console.error('Key: DISCORD_BOT_TOKEN');
-    console.error('Value: Your Discord bot token');
-    process.exit(1);
-}
-
-console.log('🤖 Starting Discord Points Bot...');
-client.login(token).catch(error => {
-    console.error('❌ Failed to start bot:', error);
-    console.error('Please check your bot token and internet connection.');
-});
+            .setDescription('**Welcome Back to the Casino!**\n```\n🎲 ╔═══════════╗ 🪙\n  ║  CASINO   ║\n  ║ ═════════ ║\n  ║ 💎 GAMES 💎 ║\n  ╚═══════════╝\n
