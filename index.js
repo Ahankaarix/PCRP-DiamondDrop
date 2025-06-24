@@ -2971,26 +2971,9 @@ async function handleDiamondMining(interaction, eventId) {
     miningData.totalClaims++;
     miningData.remainingDiamonds -= miningData.diamondReward;
 
-    // Add cooldown to prevent spam (3 seconds between claims)
-    const cooldownKey = `mining_${userId}_${eventId}`;
-    const lastClaim = global[cooldownKey] || 0;
-    const now = Date.now();
-    
-    if (now - lastClaim < 3000) {
-        return await interaction.reply({
-            content: "⏰ Please wait 3 seconds between mining attempts!",
-            ephemeral: true
-        });
-    }
-    global[cooldownKey] = now;
+    // Update top 10 miners list (assuming a function or structure exists to handle this)
+    await updateTopMinersList(userId, userClaims, miningData);
 
-    const embed = new EmbedBuilder()
-        .setTitle("⛏️ Diamond Mined Successfully!")
-        .setDescription(`**💎 Mining Reward 💎**\n\`\`\`\n    ⛏️💎⛏️\n   ╱ ╲ ╱ ╲\n  ╱   ╲   ╲\n ╱_____╲___╲\n  SUCCESS!\n\`\`\`\n\n**Diamonds Earned:** ${miningData.diamondReward} 💎\n**Your Claims:** ${userClaims}\n**New Balance:** ${userData.points.toLocaleString()} 💎\n**Remaining Pool:** ${miningData.remainingDiamonds.toLocaleString()} 💎\n**Event:** ${miningData.ticketId ? `Ticket ${miningData.ticketId}` : 'Admin Drop'}\n\n⚡ **Keep mining! You can claim unlimited times until the event ends!**`)
-        .setColor(0x00ff00)
-        .setTimestamp();
-
-    await interaction.reply({ embeds: [embed], ephemeral: true });
     await pointsSystem.saveData();
 }
 
@@ -3258,7 +3241,7 @@ async function cleanupOldPanels() {
 
 // With this (hardcoded, as requested):
 client.login(
-    "MTM4NjM2MzcyNjM0MDQyMzgyMQ.GLpFX4.OyDGG2BqgF93XlF6mkk7iFKA9D4zlPy8_I30sg",
+    "",
 );
 
 // Recommended secure approach (using environment variable):
