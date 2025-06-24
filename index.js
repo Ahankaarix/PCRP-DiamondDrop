@@ -5306,8 +5306,7 @@ async function sendSystemCommandsPanel() {
                     `\`/send_gift_card_panel\` - Deploy gift card panel\n` +
                     `\`/send_info_panel\` - Deploy information panel\n` +
                     `\`/send_point_drop_panel\` - Deploy point drop panel\n` +
-                    `\`/send_system_panel\` - Deploy this system panel\n` +
-                    `🔒 **Access:** Admin role required`,
+                    `\`/send_system_panel\` - Deploy this system panel`,
                 inline: false,
             },
             {
@@ -5317,57 +5316,12 @@ async function sendSystemCommandsPanel() {
                     `• Removes expired gift cards from database\n` +
                     `• Cleans old point drop tickets (7+ days)\n` +
                     `• Bulk deletes bot messages and user interactions\n` +
-                    `• Enhanced cleanup for fresh channel state\n` +
-                    `🔒 **Access:** Admin role required`,
+                    `• Enhanced cleanup for fresh channel state`,
                 inline: false,
             },
         );
 
-        // System Information Section
-        embed.addFields(
-            {
-                name: "⚙️ **Bot System Information**",
-                value:
-                    `**Economy Settings:**\n` +
-                    `• Daily Base Reward: 50💎 (up to 3x streak multiplier)\n` +
-                    `• Gift Card Range: 500-100,000💎 (7-day validity)\n` +
-                    `• Conversion Rate: 100💎 = 1 Rupee\n` +
-                    `• Casino Min Bets: 10💎 (Dice/Coinflip), 30💎 (Slots)\n\n` +
-                    `**Auto-Systems:**\n` +
-                    `• Auto-save every 5 minutes\n` +
-                    `• Hourly cleanup of expired data\n` +
-                    `• Auto-delete casino results (3min)\n` +
-                    `• Auto-delete gift card results (5min)`,
-                inline: false,
-            },
-            {
-                name: "🤖 **UNO AI System Details**",
-                value:
-                    `**AI Difficulty Levels:**\n` +
-                    `• 🎲 **EASY:** 70% play rate, simple strategy\n` +
-                    `• 🎯 **MEDIUM:** 85% play rate, prefers action cards\n` +
-                    `• 🎮 **HARD:** 90% play rate, strategic card choice\n` +
-                    `• 🤖 **EXPERT:** 95% play rate, optimal AI strategy\n\n` +
-                    `**Features:**\n` +
-                    `• Auto-cleanup in 10 seconds if inactive\n` +
-                    `• Diamond betting system (10-1000💎)\n` +
-                    `• Prize distribution for top 3 finishers\n` +
-                    `• Support for 2-10 players (human + AI)`,
-                inline: false,
-            },
-            {
-                name: "📊 **Channel Layout**",
-                value:
-                    `**Public Channels:**\n` +
-                    `💎 Daily Claims | 🎲 Gambling | 🎁 Gift Cards\n` +
-                    `🏆 Leaderboard | 📊 Transfers | ℹ️ Information\n\n` +
-                    `**Special Channels:**\n` +
-                    `🎯 Point Drops (Restricted access)\n` +
-                    `🛡️ Admin Panel (Admin role required)\n` +
-                    `🃏 UNO Gaming (Designated channel)`,
-                inline: false,
-            },
-        );
+        
 
         await systemChannel.send({ embeds: [embed] });
         console.log("✅ System commands panel sent");
