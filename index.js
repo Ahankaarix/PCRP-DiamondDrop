@@ -391,6 +391,29 @@ client.once("ready", async () => {
             .setName("send_info_panel")
             .setDescription("Admin: Send the information panel")
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+        new SlashCommandBuilder()
+            .setName("send_point_drop_panel")
+            .setDescription("Admin: Send the point drop ticket panel")
+            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+        new SlashCommandBuilder()
+            .setName("approve_point_drop")
+            .setDescription("Admin: Approve a point drop ticket")
+            .addStringOption(option =>
+                option.setName("ticket_id")
+                    .setDescription("Ticket ID to approve")
+                    .setRequired(true))
+            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+        new SlashCommandBuilder()
+            .setName("reject_point_drop")
+            .setDescription("Admin: Reject a point drop ticket")
+            .addStringOption(option =>
+                option.setName("ticket_id")
+                    .setDescription("Ticket ID to reject")
+                    .setRequired(true))
+            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
     ];
 
     try {
@@ -469,6 +492,15 @@ async function handleSlashCommand(interaction) {
                 break;
             case "send_info_panel":
                 await handleSendInfoPanel(interaction);
+                break;
+            case "send_point_drop_panel":
+                await handleSendPointDropPanel(interaction);
+                break;
+            case "approve_point_drop":
+                await handleApprovePointDrop(interaction);
+                break;
+            case "reject_point_drop":
+                await handleRejectPointDrop(interaction);
                 break;
         }
     } catch (error) {
@@ -570,6 +602,37 @@ async function handleButtonInteraction(interaction) {
                 await showAdminGenerateGiftCardModal(interaction);
                 break;
         }
+
+        // Handle ticket approval/rejection
+        if (customId.startsWith("approve_ticket_")) {
+            const ticketId = customId.replace("approve_ticket_", "");
+            await handleTicketApproval(interaction, ticketId, true);
+        } else if (customId.startsWith("reject_ticket_")) {
+            const ticketId = customId.replace("reject_ticket_", "");
+            await handleTicketApproval(interaction, ticketId, false);
+        }
+
+        switch (customId) {
+            case "create_point_drop_ticket":
+                if (interaction.channelId !== CHANNELS.point_drops) {
+                    const embed = new EmbedBuilder()
+                        .setTitle("❌ Wrong Channel")
+                        .setDescription(`Please use this button in <#${CHANNELS.point_drops}>`)
+                        .setColor(0xff0000);
+                    return await interaction.reply({ embeds: [embed], ephemeral: true });
+                }
+                await showPointDropTicketModal(interaction);
+                break;
+            case "point_drop_guidelines":
+                await showPointDropGuidelines(interaction);
+                break;
+            case "check_ticket_status":
+                await showTicketStatusModal(interaction);
+                break;
+            case "point_drop_history":
+                await showPointDropHistory(interaction);
+                break;
+        }
     } catch (error) {
         console.error("Error handling button interaction:", error);
     }
@@ -595,6 +658,10 @@ async function handleModalSubmit(interaction) {
             await handleGiftCardGeneration(interaction);
         } else if (customId === "admin_gift_card_generate_modal") {
             await handleAdminGiftCardGeneration(interaction);
+        } else if (customId === "point_drop_ticket_modal") {
+            await handlePointDropTicketSubmission(interaction);
+        } else if (customId === "ticket_status_modal") {
+            await handleTicketStatusCheck(interaction);
         }
     } catch (error) {
         console.error("Error handling modal submit:", error);
@@ -2053,6 +2120,118 @@ async function handleSendInfoPanel(interaction) {
     });
 }
 
+async function handleSendPointDropPanel(interaction) {
+    if (!hasAdminRole(interaction)) {
+        const embed = new EmbedBuilder()
+            .setTitle("❌ Access Denied")
+            .setDescription("You need the admin role to use this command.")
+            .setColor(0xff0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    await sendPointDropTicketPanel();
+    await interaction.reply({
+        content: "✅ Point drop ticket panel sent!",
+        ephemeral: true,
+    });
+}
+
+async function handleApprovePointDrop(interaction) {
+    if (!hasAdminRole(interaction)) {
+        const embed = new EmbedBuilder()
+            .setTitle("❌ Access Denied")
+            .setDescription("You need the admin role to use this command.")
+            .setColor(0xff0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    const ticketId = interaction.options.getString("ticket_id").toUpperCase();
+    const ticket = pointDropTickets[ticketId];
+
+    if (!ticket) {
+        return await interaction.reply({
+            content: `❌ Ticket \`${ticketId}\` not found!`,
+            ephemeral: true
+        });
+    }
+
+    if (ticket.status !== "pending") {
+        return await interaction.reply({
+            content: `❌ Ticket \`${ticketId}\` has already been ${ticket.status}!`,
+            ephemeral: true
+        });
+    }
+
+    ticket.status = "approved";
+    ticket.reviewedBy = interaction.user.id;
+    ticket.reviewedAt = new Date().toISOString();
+
+    // Notify user
+    try {
+        const user = await client.users.fetch(ticket.userId);
+        const userEmbed = new EmbedBuilder()
+            .setTitle("🎯 Point Drop Ticket Approved!")
+            .setDescription(`**Ticket ID:** \`${ticketId}\`\n**Event Title:** ${ticket.title}\n\n✅ **Approved!** Your point drop event will be scheduled soon.`)
+            .setColor(0x00ff00);
+        await user.send({ embeds: [userEmbed] });
+    } catch (error) {
+        console.log("Could not send approval DM:", error.message);
+    }
+
+    await interaction.reply({
+        content: `✅ Ticket \`${ticketId}\` approved successfully!`,
+        ephemeral: true
+    });
+}
+
+async function handleRejectPointDrop(interaction) {
+    if (!hasAdminRole(interaction)) {
+        const embed = new EmbedBuilder()
+            .setTitle("❌ Access Denied")
+            .setDescription("You need the admin role to use this command.")
+            .setColor(0xff0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    const ticketId = interaction.options.getString("ticket_id").toUpperCase();
+    const ticket = pointDropTickets[ticketId];
+
+    if (!ticket) {
+        return await interaction.reply({
+            content: `❌ Ticket \`${ticketId}\` not found!`,
+            ephemeral: true
+        });
+    }
+
+    if (ticket.status !== "pending") {
+        return await interaction.reply({
+            content: `❌ Ticket \`${ticketId}\` has already been ${ticket.status}!`,
+            ephemeral: true
+        });
+    }
+
+    ticket.status = "rejected";
+    ticket.reviewedBy = interaction.user.id;
+    ticket.reviewedAt = new Date().toISOString();
+
+    // Notify user
+    try {
+        const user = await client.users.fetch(ticket.userId);
+        const userEmbed = new EmbedBuilder()
+            .setTitle("🎯 Point Drop Ticket Rejected")
+            .setDescription(`**Ticket ID:** \`${ticketId}\`\n**Event Title:** ${ticket.title}\n\n❌ **Rejected.** Please try again with a different request.`)
+            .setColor(0xff0000);
+        await user.send({ embeds: [userEmbed] });
+    } catch (error) {
+        console.log("Could not send rejection DM:", error.message);
+    }
+
+    await interaction.reply({
+        content: `❌ Ticket \`${ticketId}\` rejected.`,
+        ephemeral: true
+    });
+}
+
 async function showUserCommands(interaction) {
     const embed = new EmbedBuilder()
         .setTitle("👥 User Commands - Diamond Bot")
@@ -2148,6 +2327,394 @@ async function showAdminCommands(interaction) {
     await interaction.reply({ embeds: [embed], ephemeral: true });
 }
 
+// Point Drop Ticket System
+let pointDropTickets = {}; // Store tickets in memory
+
+function generateTicketId() {
+    return 'PD-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+}
+
+function createPointDropTicketButtons() {
+    const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId("create_point_drop_ticket")
+            .setLabel("🎫 Create Point Drop Ticket")
+            .setStyle(ButtonStyle.Primary)
+            .setEmoji("🎯"),
+        new ButtonBuilder()
+            .setCustomId("point_drop_guidelines")
+            .setLabel("📋 View Guidelines")
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji("📖"),
+        new ButtonBuilder()
+            .setCustomId("check_ticket_status")
+            .setLabel("🔍 Check Ticket Status")
+            .setStyle(ButtonStyle.Success)
+            .setEmoji("📊")
+    );
+
+    const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId("point_drop_history")
+            .setLabel("📋 My Drop History")
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji("📚")
+    );
+
+    return [row1, row2];
+}
+
+async function showPointDropTicketModal(interaction) {
+    const modal = new ModalBuilder()
+        .setCustomId("point_drop_ticket_modal")
+        .setTitle("🎯 Point Drop Event Request");
+
+    const titleInput = new TextInputBuilder()
+        .setCustomId("event_title")
+        .setLabel("Event Title")
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder("Enter a catchy title for your point drop event...")
+        .setRequired(true)
+        .setMaxLength(100);
+
+    const diamondInput = new TextInputBuilder()
+        .setCustomId("diamond_amount")
+        .setLabel("Diamond Amount (100-10,000)")
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder("Enter total diamonds for the drop...")
+        .setRequired(true)
+        .setMaxLength(5);
+
+    const durationInput = new TextInputBuilder()
+        .setCustomId("event_duration")
+        .setLabel("Event Duration (1-60 minutes)")
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder("How long should the event last?")
+        .setRequired(true)
+        .setMaxLength(2);
+
+    const descriptionInput = new TextInputBuilder()
+        .setCustomId("event_description")
+        .setLabel("Event Description")
+        .setStyle(TextInputStyle.Paragraph)
+        .setPlaceholder("Describe your point drop event in detail...")
+        .setRequired(true)
+        .setMaxLength(500);
+
+    const reasonInput = new TextInputBuilder()
+        .setCustomId("drop_reason")
+        .setLabel("Reason for Request")
+        .setStyle(TextInputStyle.Paragraph)
+        .setPlaceholder("Why should this point drop be approved?")
+        .setRequired(true)
+        .setMaxLength(300);
+
+    modal.addComponents(
+        new ActionRowBuilder().addComponents(titleInput),
+        new ActionRowBuilder().addComponents(diamondInput),
+        new ActionRowBuilder().addComponents(durationInput),
+        new ActionRowBuilder().addComponents(descriptionInput),
+        new ActionRowBuilder().addComponents(reasonInput)
+    );
+
+    await interaction.showModal(modal);
+}
+
+async function handlePointDropTicketSubmission(interaction) {
+    const title = interaction.fields.getTextInputValue("event_title");
+    const diamondAmount = parseInt(interaction.fields.getTextInputValue("diamond_amount"));
+    const duration = parseInt(interaction.fields.getTextInputValue("event_duration"));
+    const description = interaction.fields.getTextInputValue("event_description");
+    const reason = interaction.fields.getTextInputValue("drop_reason");
+
+    // Validation
+    if (isNaN(diamondAmount) || diamondAmount < 100 || diamondAmount > 10000) {
+        return await interaction.reply({
+            content: "❌ Diamond amount must be between 100 and 10,000!",
+            ephemeral: true
+        });
+    }
+
+    if (isNaN(duration) || duration < 1 || duration > 60) {
+        return await interaction.reply({
+            content: "❌ Duration must be between 1 and 60 minutes!",
+            ephemeral: true
+        });
+    }
+
+    const ticketId = generateTicketId();
+    const ticket = {
+        id: ticketId,
+        userId: interaction.user.id,
+        title: title,
+        diamondAmount: diamondAmount,
+        duration: duration,
+        description: description,
+        reason: reason,
+        status: "pending",
+        createdAt: new Date().toISOString(),
+        reviewedBy: null,
+        reviewedAt: null
+    };
+
+    pointDropTickets[ticketId] = ticket;
+
+    // Send ticket to admin verification channel
+    const adminChannel = client.channels.cache.get(CHANNELS.gift_card_verification);
+    if (adminChannel) {
+        const adminEmbed = new EmbedBuilder()
+            .setTitle("🎯 New Point Drop Ticket Request")
+            .setDescription(`**Ticket ID:** \`${ticketId}\`\n**Requested by:** ${interaction.user}\n**User ID:** ${interaction.user.id}`)
+            .addFields(
+                { name: "🎯 Event Title", value: title, inline: false },
+                { name: "💎 Diamond Amount", value: `${diamondAmount.toLocaleString()} 💎`, inline: true },
+                { name: "⏱️ Duration", value: `${duration} minutes`, inline: true },
+                { name: "📝 Description", value: description, inline: false },
+                { name: "❓ Reason", value: reason, inline: false }
+            )
+            .setColor(0xffaa00)
+            .setTimestamp();
+
+        const adminButtons = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`approve_ticket_${ticketId}`)
+                .setLabel("✅ Approve")
+                .setStyle(ButtonStyle.Success)
+                .setEmoji("✅"),
+            new ButtonBuilder()
+                .setCustomId(`reject_ticket_${ticketId}`)
+                .setLabel("❌ Reject")
+                .setStyle(ButtonStyle.Danger)
+                .setEmoji("❌")
+        );
+
+        await adminChannel.send({ embeds: [adminEmbed], components: [adminButtons] });
+    }
+
+    // Confirm submission to user
+    const confirmEmbed = new EmbedBuilder()
+        .setTitle("🎫 Point Drop Ticket Submitted!")
+        .setDescription(`**Ticket ID:** \`${ticketId}\`\n\n**Event Title:** ${title}\n**Diamond Amount:** ${diamondAmount.toLocaleString()} 💎\n**Duration:** ${duration} minutes\n\n**Status:** 🟡 Pending Review\n\nYour point drop request has been submitted to the admin team for review. You'll receive a notification when it's processed.`)
+        .setColor(0x00ff00)
+        .setTimestamp();
+
+    await interaction.reply({ embeds: [confirmEmbed], ephemeral: true });
+}
+
+async function handleTicketApproval(interaction, ticketId, approved) {
+    if (!hasAdminRole(interaction)) {
+        return await interaction.reply({
+            content: "❌ You don't have permission to review tickets!",
+            ephemeral: true
+        });
+    }
+
+    const ticket = pointDropTickets[ticketId];
+    if (!ticket) {
+        return await interaction.reply({
+            content: "❌ Ticket not found!",
+            ephemeral: true
+        });
+    }
+
+    ticket.status = approved ? "approved" : "rejected";
+    ticket.reviewedBy = interaction.user.id;
+    ticket.reviewedAt = new Date().toISOString();
+
+    // Update the admin message
+    const embed = new EmbedBuilder()
+        .setTitle(`🎯 Point Drop Ticket ${approved ? 'Approved' : 'Rejected'}`)
+        .setDescription(`**Ticket ID:** \`${ticketId}\`\n**Status:** ${approved ? '✅ Approved' : '❌ Rejected'}\n**Reviewed by:** ${interaction.user}`)
+        .addFields(
+            { name: "🎯 Event Title", value: ticket.title, inline: false },
+            { name: "💎 Diamond Amount", value: `${ticket.diamondAmount.toLocaleString()} 💎`, inline: true },
+            { name: "⏱️ Duration", value: `${ticket.duration} minutes`, inline: true },
+            { name: "📝 Description", value: ticket.description, inline: false }
+        )
+        .setColor(approved ? 0x00ff00 : 0xff0000)
+        .setTimestamp();
+
+    await interaction.update({ embeds: [embed], components: [] });
+
+    // Notify the user
+    try {
+        const user = await client.users.fetch(ticket.userId);
+        const userEmbed = new EmbedBuilder()
+            .setTitle(`🎯 Point Drop Ticket ${approved ? 'Approved' : 'Rejected'}`)
+            .setDescription(`**Ticket ID:** \`${ticketId}\`\n**Event Title:** ${ticket.title}\n\n**Status:** ${approved ? '✅ Approved - Your event will be scheduled soon!' : '❌ Rejected - Please try again with a different request.'}`)
+            .setColor(approved ? 0x00ff00 : 0xff0000)
+            .setTimestamp();
+
+        await user.send({ embeds: [userEmbed] });
+    } catch (error) {
+        console.log("Could not send DM to user:", error.message);
+    }
+}
+
+async function showPointDropGuidelines(interaction) {
+    const embed = new EmbedBuilder()
+        .setTitle("📋 Point Drop Guidelines & Rules")
+        .setDescription("**Requirements for Point Drop Approval:**")
+        .addFields(
+            {
+                name: "💎 Diamond Range",
+                value: "• Minimum: 100 💎\n• Maximum: 10,000 💎\n• Must be reasonable for event type",
+                inline: true
+            },
+            {
+                name: "⏱️ Duration Limits",
+                value: "• Minimum: 1 minute\n• Maximum: 60 minutes\n• Consider server activity",
+                inline: true
+            },
+            {
+                name: "📝 Event Requirements",
+                value: "• Clear, descriptive title\n• Detailed event description\n• Valid reason for request",
+                inline: false
+            },
+            {
+                name: "✅ Approval Criteria",
+                value: "• Community benefit\n• Reasonable diamond amount\n• Special occasions/events\n• Active server participation",
+                inline: true
+            },
+            {
+                name: "❌ Rejection Reasons",
+                value: "• Excessive diamond requests\n• Insufficient description\n• Too frequent requests\n• Inappropriate content",
+                inline: true
+            },
+            {
+                name: "📊 Process Timeline",
+                value: "• Submission: Instant\n• Review: 1-24 hours\n• Notification: Via DM\n• Event: Scheduled by admin",
+                inline: false
+            }
+        )
+        .setColor(0x0099ff)
+        .setFooter({ text: "Follow these guidelines for better approval chances!" });
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function showTicketStatusModal(interaction) {
+    const modal = new ModalBuilder()
+        .setCustomId("ticket_status_modal")
+        .setTitle("🔍 Check Ticket Status");
+
+    const ticketInput = new TextInputBuilder()
+        .setCustomId("ticket_id")
+        .setLabel("Ticket ID")
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder("Enter your ticket ID (e.g., PD-ABCD1234)")
+        .setRequired(true)
+        .setMaxLength(12);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(ticketInput));
+    await interaction.showModal(modal);
+}
+
+async function handleTicketStatusCheck(interaction) {
+    const ticketId = interaction.fields.getTextInputValue("ticket_id").toUpperCase();
+    const ticket = pointDropTickets[ticketId];
+
+    if (!ticket) {
+        const embed = new EmbedBuilder()
+            .setTitle("❌ Ticket Not Found")
+            .setDescription(`**Ticket ID:** \`${ticketId}\`\n\nThis ticket ID doesn't exist in our system.`)
+            .setColor(0xff0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    let statusEmoji, statusColor;
+    switch (ticket.status) {
+        case "pending":
+            statusEmoji = "🟡";
+            statusColor = 0xffaa00;
+            break;
+        case "approved":
+            statusEmoji = "✅";
+            statusColor = 0x00ff00;
+            break;
+        case "rejected":
+            statusEmoji = "❌";
+            statusColor = 0xff0000;
+            break;
+        default:
+            statusEmoji = "❓";
+            statusColor = 0x808080;
+    }
+
+    const embed = new EmbedBuilder()
+        .setTitle("🔍 Ticket Status Check")
+        .setDescription(`**Ticket ID:** \`${ticketId}\`\n**Status:** ${statusEmoji} ${ticket.status.charAt(0).toUpperCase() + ticket.status.slice(1)}`)
+        .addFields(
+            { name: "🎯 Event Title", value: ticket.title, inline: false },
+            { name: "💎 Diamond Amount", value: `${ticket.diamondAmount.toLocaleString()} 💎`, inline: true },
+            { name: "⏱️ Duration", value: `${ticket.duration} minutes`, inline: true },
+            { name: "📅 Submitted", value: `<t:${Math.floor(new Date(ticket.createdAt).getTime() / 1000)}:F>`, inline: false }
+        )
+        .setColor(statusColor)
+        .setTimestamp();
+
+    if (ticket.reviewedAt) {
+        embed.addFields({
+            name: "👥 Reviewed",
+            value: `<t:${Math.floor(new Date(ticket.reviewedAt).getTime() / 1000)}:F>`,
+            inline: true
+        });
+    }
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function showPointDropHistory(interaction) {
+    const userTickets = Object.values(pointDropTickets).filter(ticket => ticket.userId === interaction.user.id);
+    
+    if (userTickets.length === 0) {
+        const embed = new EmbedBuilder()
+            .setTitle("📋 Your Point Drop History")
+            .setDescription("You haven't submitted any point drop tickets yet!\n\nClick **Create Point Drop Ticket** to submit your first request.")
+            .setColor(0x0099ff);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    const embed = new EmbedBuilder()
+        .setTitle("📋 Your Point Drop History")
+        .setDescription(`**Total Tickets:** ${userTickets.length}\n\nShowing your last 5 tickets:`)
+        .setColor(0x0099ff);
+
+    const recentTickets = userTickets.slice(-5).reverse();
+    
+    for (const ticket of recentTickets) {
+        let statusEmoji;
+        switch (ticket.status) {
+            case "pending": statusEmoji = "🟡"; break;
+            case "approved": statusEmoji = "✅"; break;
+            case "rejected": statusEmoji = "❌"; break;
+            default: statusEmoji = "❓";
+        }
+
+        embed.addFields({
+            name: `${statusEmoji} ${ticket.title}`,
+            value: `**ID:** \`${ticket.id}\`\n**Amount:** ${ticket.diamondAmount} 💎\n**Status:** ${ticket.status}\n**Submitted:** <t:${Math.floor(new Date(ticket.createdAt).getTime() / 1000)}:R>`,
+            inline: false
+        });
+    }
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function sendPointDropTicketPanel() {
+    const pointDropChannel = client.channels.cache.get(CHANNELS.point_drops);
+    if (pointDropChannel) {
+        const embed = new EmbedBuilder()
+            .setTitle("🎯 Point Drop Ticket System")
+            .setDescription(`**Request Community Point Drop Events!**\n\`\`\`\n  🎯 POINT DROP SYSTEM 🎯\n╔═══════════════════════════╗\n║ 🎫 Create Event Tickets   ║\n║ 📋 View Guidelines        ║\n║ 🔍 Check Status          ║\n║ 📚 View History          ║\n╚═══════════════════════════╝\n\`\`\`\n\n**How it Works:**\n1. 🎫 **Create Ticket** - Submit your point drop event request\n2. 📋 **Follow Guidelines** - Check requirements for approval\n3. ⏳ **Wait for Review** - Admin team reviews your request\n4. 🎉 **Event Scheduled** - Approved events get scheduled\n\n**Request Requirements:**\n💎 **Diamond Range:** 100 - 10,000 diamonds\n⏱️ **Duration:** 1 - 60 minutes\n📝 **Details:** Title, description, and reason required\n\n**Review Process:**\n• All requests reviewed by admin team\n• Approval based on community benefit\n• Notifications sent via DM\n• Approved events scheduled by admins\n\n**Tips for Approval:**\n✅ Special occasions (holidays, milestones)\n✅ Community engagement events\n✅ Reasonable diamond amounts\n✅ Clear event descriptions\n✅ Valid reasons for request\n\nStart by clicking **Create Point Drop Ticket** below!`)
+            .setColor(0x00bfff);
+
+        const components = createPointDropTicketButtons();
+        await pointDropChannel.send({ embeds: [embed], components });
+        console.log("✅ Point drop ticket panel sent");
+    }
+}
+
 // Startup functions
 async function sendStartupPanels() {
     await cleanupOldPanels();
@@ -2157,6 +2724,7 @@ async function sendStartupPanels() {
     await sendLeaderboardPanel();
     await sendInfoPanel();
     await sendAdminGiftCardPanel();
+    await sendPointDropTicketPanel();
 }
 
 async function sendDailyClaimPanel() {
@@ -2306,6 +2874,7 @@ async function cleanupOldPanels() {
         CHANNELS.leaderboard,
         CHANNELS.information,
         CHANNELS.gift_card_verification,
+        CHANNELS.point_drops,
     ];
 
     for (const channelId of channels) {
