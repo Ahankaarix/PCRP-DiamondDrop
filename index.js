@@ -21,6 +21,8 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildPresences, // Added for real-time presence monitoring
+        GatewayIntentBits.GuildMembers, // Added for member status checking
     ],
 });
 
@@ -29,33 +31,44 @@ const DATA_FILE = "bot_data.json";
 
 // Channel configuration - Update these with your channel IDs
 const CHANNELS = {
-    daily_claims: "1387023026301960212",
-    point_drops: "1387023237782962248",
-    leaderboard: "1387023490649034782",
-    transfers: "1387023571368415292",
-    gambling: "1387023670634872873",
-    gift_cards: "1387023764012797972", // Gift Card Redemption Center
-    gift_card_verification: "1387119676961849464", // Gift Card Verification Panel
-    information: "1387120060870688788", // Information Panel
-    system_commands: "1387120060870688789", // System Commands Panel
+    daily_claims: "CHANNELS ID",
+    point_drops: "CHANNELS ID",
+    leaderboard: "CHANNELS ID",
+    transfers: "CHANNELS ID",
+    gambling: "CHANNELS ID",
+    gift_cards: "CHANNELS ID", // Gift Card Redemption Center
+    gift_card_verification: "CHANNELS ID", // Gift Card Verification Panel
+    information: "CHANNELS ID", // Information Panel
+    admin_reports: "CHANNELS ID", // Admin Reports Channel
     general: null, // Can be set to allow leaderboard from general channel
 };
 
 // Admin role configuration
-const ADMIN_ROLE_ID = "1210529712926105661";
+const ADMIN_ROLE_IDS = [
+    "ROLE ID", // Original admin role
+    "ROLE ID", // Overwatcher
+    "ROLE ID", // Developer
+    "ROLE ID", // Management
+    "ROLE ID", // Lead Admin
+    "ROLE ID", // Support Team
+    "ROLE ID", // Chat Mod
+    "ROLE ID", // Trial Mod
+];
 const ADMIN_USER_IDS = [
-    "959692217885294632",
-    "879396413010743337",
-    "1054207830292447324",
+    "ROLE ID",
+    "ROLE ID",
+    "ROLE ID",
 ];
 
 // Function to check if user has admin role
 function hasAdminRole(interaction) {
     if (!interaction.member) return false;
 
-    // Check if user has admin role
-    if (interaction.member.roles.cache.has(ADMIN_ROLE_ID)) {
-        return true;
+    // Check if user has any of the admin roles
+    for (const roleId of ADMIN_ROLE_IDS) {
+        if (interaction.member.roles.cache.has(roleId)) {
+            return true;
+        }
     }
 
     // Check if user is in admin user IDs list
@@ -87,6 +100,8 @@ class PointsBot {
             },
             gift_card_requests: {},
             generated_gift_cards: {}, // Store generated gift cards
+            admin_sessions: {}, // Store admin login sessions
+            admin_tracking: {}, // Store admin tracking data
         };
         this.loadData();
     }
@@ -162,6 +177,84 @@ class PointsBot {
             }
         }
     }
+
+    getAdminData(userId) {
+        const userIdStr = userId.toString();
+        if (!this.data.admin_tracking[userIdStr]) {
+            this.data.admin_tracking[userIdStr] = {
+                totalHours: 0,
+                sessions: [],
+                currentSession: null,
+                lastActivity: null,
+            };
+        }
+        return this.data.admin_tracking[userIdStr];
+    }
+
+    startAdminSession(userId) {
+        const adminData = this.getAdminData(userId);
+        const now = new Date();
+
+        // End any existing session first
+        if (adminData.currentSession) {
+            this.endAdminSession(userId);
+        }
+
+        adminData.currentSession = {
+            loginTime: now.toISOString(),
+            logoutTime: null,
+            duration: 0,
+            isActive: true,
+        };
+        adminData.lastActivity = now.toISOString();
+    }
+
+    endAdminSession(userId) {
+        const adminData = this.getAdminData(userId);
+        if (!adminData.currentSession) return null;
+
+        const now = new Date();
+        const loginTime = new Date(adminData.currentSession.loginTime);
+        const duration = Math.floor((now - loginTime) / 1000 / 60); // Duration in minutes
+
+        adminData.currentSession.logoutTime = now.toISOString();
+        adminData.currentSession.duration = duration;
+        adminData.currentSession.isActive = false;
+
+        // Add to sessions history
+        adminData.sessions.push({ ...adminData.currentSession });
+        adminData.totalHours += duration / 60; // Convert to hours
+
+        const sessionData = adminData.currentSession;
+        adminData.currentSession = null;
+
+        // Clean old sessions (older than 30 days)
+        const thirtyDaysAgo = new Date(
+            now.getTime() - 30 * 24 * 60 * 60 * 1000,
+        );
+        adminData.sessions = adminData.sessions.filter(
+            (session) => new Date(session.loginTime) > thirtyDaysAgo,
+        );
+
+        return sessionData;
+    }
+
+    cleanupOldAdminData() {
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+        for (const [userId, data] of Object.entries(this.data.admin_tracking)) {
+            // Clean old sessions
+            data.sessions = data.sessions.filter(
+                (session) => new Date(session.loginTime) > thirtyDaysAgo,
+            );
+
+            // Recalculate total hours from remaining sessions
+            data.totalHours = data.sessions.reduce(
+                (total, session) => total + session.duration / 60,
+                0,
+            );
+        }
+    }
 }
 
 const pointsSystem = new PointsBot();
@@ -170,15 +263,153 @@ const pointsSystem = new PointsBot();
 setInterval(
     async () => {
         pointsSystem.cleanupExpiredGiftCards();
+        pointsSystem.cleanupOldAdminData();
         await pointsSystem.saveData();
     },
     5 * 60 * 1000,
 );
 
-// Auto-cleanup old messages every hour
+// Enhanced admin status monitoring every minute
+setInterval(async () => {
+    try {
+        for (const [userId, data] of Object.entries(
+            pointsSystem.data.admin_tracking,
+        )) {
+            if (data.currentSession && data.currentSession.isActive) {
+                try {
+                    const user = await client.users.fetch(userId);
+                    const guild = client.guilds.cache.first();
+                    const member = guild?.members.cache.get(userId);
+
+                    let isUserOffline = false;
+                    let offlineReason = "";
+
+                    // Enhanced offline detection
+                    if (!member) {
+                        isUserOffline = true;
+                        offlineReason = "User not found in server";
+                    } else if (!member.presence) {
+                        isUserOffline = true;
+                        offlineReason =
+                            "No presence data (Discord likely closed)";
+                    } else if (member.presence.status === "offline") {
+                        isUserOffline = true;
+                        offlineReason = "User status: offline";
+                    } else if (member.presence.status === "invisible") {
+                        // For invisible users, check if they've been inactive for longer
+                        const lastActivity = new Date(data.lastActivity);
+                        const now = new Date();
+                        const timeSinceActivity =
+                            (now - lastActivity) / 1000 / 60; // minutes
+
+                        if (timeSinceActivity > 3) {
+                            // Shorter timeout for invisible users
+                            isUserOffline = true;
+                            offlineReason =
+                                "User invisible and inactive for >3 minutes";
+                        }
+                    }
+
+                    if (isUserOffline) {
+                        const lastActivity = new Date(data.lastActivity);
+                        const now = new Date();
+                        const timeSinceActivity =
+                            (now - lastActivity) / 1000 / 60; // minutes
+
+                        // Auto-logout if offline for more than 2 minutes (reduced from 5)
+                        if (timeSinceActivity > 2) {
+                            console.log(
+                                `🔄 Auto-logout admin ${user?.username || userId}: ${offlineReason}`,
+                            );
+
+                            const sessionData =
+                                pointsSystem.endAdminSession(userId);
+                            await pointsSystem.saveData();
+
+                            // Send auto-logout notification to admin reports channel
+                            try {
+                                const adminChannel = client.channels.cache.get(
+                                    CHANNELS.admin_reports,
+                                );
+                                if (adminChannel && sessionData) {
+                                    const hours = Math.floor(
+                                        sessionData.duration / 60,
+                                    );
+                                    const minutes = sessionData.duration % 60;
+                                    const timeString =
+                                        hours > 0
+                                            ? `${hours}h ${minutes}m`
+                                            : `${minutes}m`;
+
+                                    const embed = new EmbedBuilder()
+                                        .setTitle("🔴 Automatic Admin Logout")
+                                        .setDescription(
+                                            `**${user.displayName}** was automatically logged out\n\n🔐 **Reason:** ${offlineReason}\n⏱️ **Session Duration:** ${timeString}\n🔓 **Auto-Logout:** <t:${Math.floor(Date.now() / 1000)}:F>\n\n⚙️ **System:** Session ended due to offline detection`,
+                                        )
+                                        .setColor(0xff6600)
+                                        .setTimestamp();
+
+                                    await adminChannel.send({
+                                        embeds: [embed],
+                                    });
+                                }
+                            } catch (notifyError) {
+                                console.log(
+                                    "Could not send auto-logout notification:",
+                                    notifyError.message,
+                                );
+                            }
+
+                            // Try to notify the user via DM if possible
+                            try {
+                                if (sessionData) {
+                                    const hours = Math.floor(
+                                        sessionData.duration / 60,
+                                    );
+                                    const minutes = sessionData.duration % 60;
+                                    const timeString =
+                                        hours > 0
+                                            ? `${hours}h ${minutes}m`
+                                            : `${minutes}m`;
+
+                                    const userEmbed = new EmbedBuilder()
+                                        .setTitle("🔴 Auto-Logout Notification")
+                                        .setDescription(
+                                            `Your admin session was automatically ended.\n\n**Reason:** ${offlineReason}\n**Session Duration:** ${timeString}\n**Ended:** <t:${Math.floor(Date.now() / 1000)}:F>\n\n💡 **Tip:** Use the Login button when you return to start a new session.`,
+                                        )
+                                        .setColor(0xff6600)
+                                        .setTimestamp();
+
+                                    await user.send({ embeds: [userEmbed] });
+                                }
+                            } catch (dmError) {
+                                console.log(
+                                    "Could not send auto-logout DM:",
+                                    dmError.message,
+                                );
+                            }
+                        }
+                    } else {
+                        // Update last activity for online users
+                        data.lastActivity = new Date().toISOString();
+                    }
+                } catch (error) {
+                    console.log(
+                        `Error monitoring admin ${userId}:`,
+                        error.message,
+                    );
+                }
+            }
+        }
+    } catch (error) {
+        console.error("Error in admin monitoring:", error);
+    }
+}, 60 * 1000); // Every minute
+
+// Auto-cleanup old messages every 6 hours + Monthly admin reports
 setInterval(
     async () => {
-        console.log("🧹 Hourly auto-cleanup starting...");
+        console.log("🧹 6-hour auto-cleanup starting...");
         try {
             // Clean up old user-generated gift cards
             const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -215,898 +446,19 @@ setInterval(
                 );
                 if (cleanedCards > 0) await pointsSystem.saveData();
             }
+
+            // Check if it's the 1st day of the month and generate admin report
+            const now = new Date();
+            if (now.getDate() === 1 && now.getHours() === 0) {
+                console.log("📊 Generating monthly admin report...");
+                await generateMonthlyAdminReport();
+            }
         } catch (error) {
             console.error("Error during auto-cleanup:", error);
         }
     },
-    60 * 60 * 1000, // Every hour
+    6 * 60 * 60 * 1000, // Every 6 hours
 );
-
-// UNO Game System
-let activeUnoGames = new Map();
-let unoTickets = new Map(); // Store UNO tickets
-
-// AI Bot Players
-const aiBotPlayers = [
-    { id: "ai_bot_1", name: "🤖 UNO Master", difficulty: "expert" },
-    { id: "ai_bot_2", name: "🎮 Card Shark", difficulty: "hard" },
-    { id: "ai_bot_3", name: "🎯 Lucky Player", difficulty: "medium" },
-    { id: "ai_bot_4", name: "🎲 Rookie Bot", difficulty: "easy" },
-];
-
-// UNO Ticket System
-function generateUnoTicketId() {
-    return "UNO-" + Math.random().toString(36).substring(2, 10).toUpperCase();
-}
-
-function createUnoTicketPanel() {
-    const embed = new EmbedBuilder()
-        .setTitle("🃏 UNO Game Ticket System")
-        .setDescription(
-            `**Create Your UNO Gaming Session!**\n\`\`\`\n` +
-            `    🃏 UNO TICKETS 🃏\n` +
-            `  ╔═══════════════════╗\n` +
-            `  ║ 🎫 Create Ticket  ║\n` +
-            `  ║ 💎 Set Bet Amount ║\n` +
-            `  ║ 🤖 Choose AI Mode ║\n` +
-            `  ║ 👥 Play with Users║\n` +
-            `  ╚═══════════════════╝\n` +
-            `\`\`\`\n\n` +
-            `**How to Start:**\n` +
-            `1. 🎫 **Create Ticket** - Set up your game session\n` +
-            `2. 💎 **Set Bet** - Choose diamond amount (10-1000 💎)\n` +
-            `3. 🤖 **AI Options** - Choose difficulty or human-only\n` +
-            `4. 🎮 **Start Game** - Begin your UNO showdown!\n\n` +
-            `**Game Features:**\n` +
-            `• 💎 **Diamond Betting** - Win prizes based on placement\n` +
-            `• 🤖 **AI Players** - 4 difficulty levels available\n` +
-            `• 🏆 **Prize Distribution** - 50%/30%/20% for top 3\n` +
-            `• ⚡ **Auto-cleanup** - Games clean up if inactive\n\n` +
-            `**Betting Ranges:**\n` +
-            `• Minimum Bet: 10 💎 per player\n` +
-            `• Maximum Bet: 1000 💎 per player\n` +
-            `• Winner gets 50% of total prize pool\n\n` +
-            `**AI Difficulty Levels:**\n` +
-            `🎲 **EASY** - 70% play rate, basic strategy\n` +
-            `🎯 **MEDIUM** - 85% play rate, prefers action cards\n` +
-            `🎮 **HARD** - 90% play rate, strategic choices\n` +
-            `🤖 **EXPERT** - 95% play rate, optimal strategy\n\n` +
-            `Click **Create UNO Ticket** to start your gaming session!`,
-        )
-        .setColor(0x9932cc)
-        .setTimestamp();
-
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId("create_uno_ticket")
-            .setLabel("🎫 Create UNO Ticket")
-            .setStyle(ButtonStyle.Primary)
-            .setEmoji("🃏"),
-        new ButtonBuilder()
-            .setCustomId("uno_rules_guide")
-            .setLabel("📋 Rules & Guide")
-            .setStyle(ButtonStyle.Secondary)
-            .setEmoji("📖"),
-        new ButtonBuilder()
-            .setCustomId("uno_active_games")
-            .setLabel("🎮 Active Games")
-            .setStyle(ButtonStyle.Success)
-            .setEmoji("👀"),
-    );
-
-    return { embeds: [embed], components: [row] };
-}
-
-class UnoGame {
-    constructor(channelId, creatorId) {
-        this.gameId = `uno_${Date.now()}`;
-        this.channelId = channelId;
-        this.creatorId = creatorId;
-        this.players = [creatorId];
-        this.status = "lobby";
-        this.deck = this.createDeck();
-        this.hands = new Map();
-        this.discardPile = [];
-        this.currentPlayerIndex = 0;
-        this.direction = 1;
-        this.autoCleanupTimer = null;
-        this.betAmount = 0;
-        this.totalPrizePool = 0;
-        this.playerBets = new Map();
-        this.finishedPlayers = [];
-        this.aiPlayers = new Map(); // Track AI players
-        this.gameStartTime = null;
-        this.prizeDistribution = {
-            1: 0.5, // Winner gets 50%
-            2: 0.3, // Second place gets 30%
-            3: 0.2, // Third place gets 20%
-        };
-    }
-
-    addAIPlayer() {
-        if (this.players.length >= 10) return false;
-
-        const availableAI = aiBotPlayers.filter(
-            (bot) => !this.players.includes(bot.id),
-        );
-        if (availableAI.length === 0) return false;
-
-        const aiBot =
-            availableAI[Math.floor(Math.random() * availableAI.length)];
-        this.players.push(aiBot.id);
-        this.aiPlayers.set(aiBot.id, aiBot);
-
-        // AI doesn't need to pay bet, but add to prize pool for balance
-        if (this.betAmount > 0) {
-            this.totalPrizePool += this.betAmount;
-        }
-
-        return aiBot;
-    }
-
-    async makeAIMove(aiPlayerId) {
-        const aiData = this.aiPlayers.get(aiPlayerId);
-        if (!aiData) return false;
-
-        const hand = this.hands.get(aiPlayerId);
-        const topCard = this.discardPile[this.discardPile.length - 1];
-        const playableCards = hand.filter((card) =>
-            this.canPlayCard(card, topCard),
-        );
-
-        // AI decision making based on difficulty
-        let cardToPlay = null;
-
-        if (playableCards.length > 0) {
-            switch (aiData.difficulty) {
-                case "easy":
-                    // 70% chance to play first playable card
-                    if (Math.random() < 0.7) {
-                        cardToPlay = playableCards[0];
-                    }
-                    break;
-                case "medium":
-                    // 85% chance to play, prefers action cards
-                    if (Math.random() < 0.85) {
-                        const actionCards = playableCards.filter((card) =>
-                            [
-                                "skip",
-                                "reverse",
-                                "draw2",
-                                "wild",
-                                "wild_draw4",
-                            ].includes(card.value),
-                        );
-                        cardToPlay =
-                            actionCards.length > 0
-                                ? actionCards[0]
-                                : playableCards[0];
-                    }
-                    break;
-                case "hard":
-                    // 90% chance to play, strategic card choice
-                    if (Math.random() < 0.9) {
-                        if (hand.length === 2) {
-                            // Save wild cards for last
-                            const nonWild = playableCards.filter(
-                                (card) => card.color !== "wild",
-                            );
-                            cardToPlay =
-                                nonWild.length > 0
-                                    ? nonWild[0]
-                                    : playableCards[0];
-                        } else {
-                            cardToPlay = playableCards[0];
-                        }
-                    }
-                    break;
-                case "expert":
-                    // 95% chance to play, very strategic
-                    if (Math.random() < 0.95) {
-                        // Complex AI logic here
-                        cardToPlay = this.getOptimalAICard(
-                            playableCards,
-                            hand,
-                            topCard,
-                        );
-                    }
-                    break;
-            }
-        }
-
-        if (cardToPlay) {
-            const handIndex = hand.indexOf(cardToPlay);
-            hand.splice(handIndex, 1);
-            this.discardPile.push(cardToPlay);
-            return { action: "play", card: cardToPlay };
-        } else {
-            // Draw a card
-            if (this.deck.length > 0) {
-                const drawnCard = this.deck.pop();
-                hand.push(drawnCard);
-                return { action: "draw", card: drawnCard };
-            }
-        }
-
-        return false;
-    }
-
-    getOptimalAICard(playableCards, hand, topCard) {
-        // Expert AI strategy
-        if (hand.length === 2) {
-            // Try to play non-wild cards when close to winning
-            const nonWild = playableCards.filter(
-                (card) => card.color !== "wild",
-            );
-            if (nonWild.length > 0) return nonWild[0];
-        }
-
-        // Prefer action cards to disrupt opponents
-        const actionCards = playableCards.filter((card) =>
-            ["skip", "reverse", "draw2"].includes(card.value),
-        );
-        if (actionCards.length > 0) return actionCards[0];
-
-        // Save wild cards for strategic moments
-        const wildCards = playableCards.filter((card) => card.color === "wild");
-        const regularCards = playableCards.filter(
-            (card) => card.color !== "wild",
-        );
-
-        return regularCards.length > 0 ? regularCards[0] : wildCards[0];
-    }
-
-    createDeck() {
-        const colors = ["red", "blue", "green", "yellow"];
-        const values = [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9",
-            "skip",
-            "reverse",
-            "draw2",
-        ];
-        const deck = [];
-
-        // Number cards and action cards
-        for (const color of colors) {
-            for (const value of values) {
-                const cardDisplay = this.getCardEmoji(color, value);
-                deck.push({
-                    color,
-                    value,
-                    emoji: cardDisplay.emoji,
-                    image: cardDisplay.image,
-                });
-                if (value !== "0") {
-                    // Add second copy except for 0
-                    deck.push({
-                        color,
-                        value,
-                        emoji: cardDisplay.emoji,
-                        image: cardDisplay.image,
-                    });
-                }
-            }
-        }
-
-        // Wild cards
-        for (let i = 0; i < 4; i++) {
-            const wildDisplay = this.getCardEmoji("wild", "wild");
-            const wildDraw4Display = this.getCardEmoji("wild", "wild_draw4");
-            deck.push({
-                color: "wild",
-                value: "wild",
-                emoji: wildDisplay.emoji,
-                image: wildDisplay.image,
-            });
-            deck.push({
-                color: "wild",
-                value: "wild_draw4",
-                emoji: wildDraw4Display.emoji,
-                image: wildDraw4Display.image,
-            });
-        }
-
-        return this.shuffleDeck(deck);
-    }
-
-    getCardEmoji(color, value) {
-        // Use online UNO card images
-        const cardImages = {
-            // Red cards
-            red_0: "https://i.imgur.com/8XqvYjK.png",
-            red_1: "https://i.imgur.com/mKJ2VHt.png",
-            red_2: "https://i.imgur.com/7Nf9sZM.png",
-            red_3: "https://i.imgur.com/vGq8fJp.png",
-            red_4: "https://i.imgur.com/2Mz7Xjq.png",
-            red_5: "https://i.imgur.com/8tHvBjM.png",
-            red_6: "https://i.imgur.com/Kq3mJtP.png",
-            red_7: "https://i.imgur.com/9Pv6LjN.png",
-            red_8: "https://i.imgur.com/HtVq2mK.png",
-            red_9: "https://i.imgur.com/LmP9VjQ.png",
-            red_skip: "https://i.imgur.com/QmV7JtK.png",
-            red_reverse: "https://i.imgur.com/RtN8MjL.png",
-            red_draw2: "https://i.imgur.com/VmQ9LtP.png",
-
-            // Blue cards
-            blue_0: "https://i.imgur.com/NtP8VjM.png",
-            blue_1: "https://i.imgur.com/MtQ7VjK.png",
-            blue_2: "https://i.imgur.com/PtR9VjL.png",
-            blue_3: "https://i.imgur.com/QtS8VjN.png",
-            blue_4: "https://i.imgur.com/RtT9VjP.png",
-            blue_5: "https://i.imgur.com/StU8VjQ.png",
-            blue_6: "https://i.imgur.com/TtV9VjR.png",
-            blue_7: "https://i.imgur.com/UtW8VjS.png",
-            blue_8: "https://i.imgur.com/VtX9VjT.png",
-            blue_9: "https://i.imgur.com/WtY8VjU.png",
-            blue_skip: "https://i.imgur.com/XtZ9VjV.png",
-            blue_reverse: "https://i.imgur.com/YtA8VjW.png",
-            blue_draw2: "https://i.imgur.com/ZtB9VjX.png",
-
-            // Green cards
-            green_0: "https://i.imgur.com/AtC8VjY.png",
-            green_1: "https://i.imgur.com/BtD9VjZ.png",
-            green_2: "https://i.imgur.com/CtE8Vja.png",
-            green_3: "https://i.imgur.com/DtF9Vjb.png",
-            green_4: "https://i.imgur.com/EtG8Vjc.png",
-            green_5: "https://i.imgur.com/FtH9Vjd.png",
-            green_6: "https://i.imgur.com/GtI8Vje.png",
-            green_7: "https://i.imgur.com/HtJ9Vjf.png",
-            green_8: "https://i.imgur.com/ItK8Vjg.png",
-            green_9: "https://i.imgur.com/JtL9Vjh.png",
-            green_skip: "https://i.imgur.com/KtM8Vji.png",
-            green_reverse: "https://i.imgur.com/LtN9Vjj.png",
-            green_draw2: "https://i.imgur.com/MtO8Vjk.png",
-
-            // Yellow cards
-            yellow_0: "https://i.imgur.com/NtP9Vjl.png",
-            yellow_1: "https://i.imgur.com/OtQ8Vjm.png",
-            yellow_2: "https://i.imgur.com/PtR9Vjn.png",
-            yellow_3: "https://i.imgur.com/QtS8Vjo.png",
-            yellow_4: "https://i.imgur.com/RtT9Vjp.png",
-            yellow_5: "https://i.imgur.com/StU8Vjq.png",
-            yellow_6: "https://i.imgur.com/TtV9Vjr.png",
-            yellow_7: "https://i.imgur.com/UtW8Vjs.png",
-            yellow_8: "https://i.imgur.com/VtX9Vjt.png",
-            yellow_9: "https://i.imgur.com/WtY8Vju.png",
-            yellow_skip: "https://i.imgur.com/XtZ9Vjv.png",
-            yellow_reverse: "https://i.imgur.com/YtA8Vjw.png",
-            yellow_draw2: "https://i.imgur.com/ZtB9Vjx.png",
-
-            // Wild cards
-            wild: "https://i.imgur.com/AtC9Vjy.png",
-            wild_draw4: "https://i.imgur.com/BtD8Vjz.png",
-        };
-
-        const cardKey = color === "wild" ? value : `${color}_${value}`;
-        const imageUrl = cardImages[cardKey];
-
-        // Fallback to emoji if image not found
-        const colorEmojis = {
-            red: "🔴",
-            blue: "🔵",
-            green: "🟢",
-            yellow: "🟡",
-        };
-
-        const valueEmojis = {
-            skip: "⏭️",
-            reverse: "🔄",
-            draw2: "➕2️⃣",
-            wild: "🌈",
-            wild_draw4: "🌈⚡",
-        };
-
-        if (color === "wild") {
-            return { emoji: valueEmojis[value] || "🌈", image: imageUrl };
-        }
-
-        const emoji = valueEmojis[value]
-            ? `${colorEmojis[color]}${valueEmojis[value]}`
-            : `${colorEmojis[color]}${value}`;
-
-        return { emoji, image: imageUrl };
-    }
-
-    shuffleDeck(deck) {
-        for (let i = deck.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [deck[i], deck[j]] = [deck[j], deck[i]];
-        }
-        return deck;
-    }
-
-    dealCards() {
-        for (const playerId of this.players) {
-            this.hands.set(playerId, []);
-            for (let i = 0; i < 7; i++) {
-                this.hands.get(playerId).push(this.deck.pop());
-            }
-        }
-        // Start discard pile
-        this.discardPile.push(this.deck.pop());
-    }
-
-    addPlayer(userId) {
-        if (!this.players.includes(userId) && this.players.length < 10) {
-            this.players.push(userId);
-            return true;
-        }
-        return false;
-    }
-
-    getCurrentPlayer() {
-        return this.players[this.currentPlayerIndex];
-    }
-
-    nextTurn() {
-        this.currentPlayerIndex =
-            (this.currentPlayerIndex + this.direction + this.players.length) %
-            this.players.length;
-    }
-
-    canPlayCard(card, topCard) {
-        if (card.color === "wild") return true;
-        return card.color === topCard.color || card.value === topCard.value;
-    }
-
-    startAutoCleanup(message) {
-        this.autoCleanupTimer = setTimeout(async () => {
-            try {
-                await message.delete();
-                activeUnoGames.delete(this.gameId);
-                console.log(`🧹 Auto-cleaned UNO game ${this.gameId}`);
-            } catch (error) {
-                console.log("Could not auto-clean UNO game:", error.message);
-            }
-        }, 10 * 1000); // 10 seconds
-    }
-
-    cancelAutoCleanup() {
-        if (this.autoCleanupTimer) {
-            clearTimeout(this.autoCleanupTimer);
-            this.autoCleanupTimer = null;
-        }
-    }
-
-    setBetAmount(amount) {
-        this.betAmount = amount;
-        this.totalPrizePool = amount * this.players.length;
-    }
-
-    addPlayerBet(userId, amount) {
-        this.playerBets.set(userId, amount);
-        this.totalPrizePool += amount;
-    }
-
-    finishPlayer(userId) {
-        if (!this.finishedPlayers.includes(userId)) {
-            this.finishedPlayers.push(userId);
-        }
-    }
-
-    calculatePrizeDistribution() {
-        const prizes = {};
-        let remainingPool = this.totalPrizePool;
-
-        for (let i = 0; i < Math.min(this.finishedPlayers.length, 3); i++) {
-            const playerId = this.finishedPlayers[i];
-            const position = i + 1;
-            const percentage = this.prizeDistribution[position] || 0;
-            const prize = Math.floor(this.totalPrizePool * percentage);
-            prizes[playerId] = prize;
-            remainingPool -= prize;
-        }
-
-        return prizes;
-    }
-
-    getCardImageEmbed(card) {
-        if (card.image) {
-            return {
-                image: { url: card.image },
-                description: `**Card:** ${card.emoji}`,
-            };
-        }
-        return null;
-    }
-}
-
-function createUnoLobbyButtons(gameId) {
-    const row1 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId(`uno_join_${gameId}`)
-            .setLabel("🎮 Join Game")
-            .setStyle(ButtonStyle.Success)
-            .setEmoji("🃏"),
-        new ButtonBuilder()
-            .setCustomId(`uno_add_ai_${gameId}`)
-            .setLabel("🤖 Add AI Bot")
-            .setStyle(ButtonStyle.Secondary)
-            .setEmoji("🎯"),
-        new ButtonBuilder()
-            .setCustomId(`uno_start_${gameId}`)
-            .setLabel("▶️ Start Game")
-            .setStyle(ButtonStyle.Primary)
-            .setEmoji("🚀"),
-    );
-
-    const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId(`uno_cancel_${gameId}`)
-            .setLabel("❌ Cancel")
-            .setStyle(ButtonStyle.Danger),
-    );
-
-    return [row1, row2];
-}
-
-function createUnoGameButtons(gameId) {
-    return new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId(`uno_play_${gameId}`)
-            .setLabel("🎴 Play Card")
-            .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
-            .setCustomId(`uno_draw_${gameId}`)
-            .setLabel("📥 Draw Card")
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId(`uno_call_${gameId}`)
-            .setLabel("🗣️ Call UNO!")
-            .setStyle(ButtonStyle.Danger),
-    );
-}
-
-async function startUnoGame(channelId, creatorId, betAmount = 0) {
-    const game = new UnoGame(channelId, creatorId);
-    if (betAmount > 0) {
-        game.setBetAmount(betAmount);
-        // Deduct bet from creator
-        const userData = pointsSystem.getUserData(creatorId);
-        userData.points -= betAmount;
-        userData.total_spent += betAmount;
-        game.addPlayerBet(creatorId, betAmount);
-        await pointsSystem.saveData();
-    }
-
-    activeUnoGames.set(game.gameId, game);
-
-    const channel = client.channels.cache.get(channelId);
-    if (!channel) return;
-
-    try {
-        const creator = await client.users.fetch(creatorId);
-
-        const bettingInfo =
-            betAmount > 0
-                ? `💎 **Diamond Betting:** ${betAmount} 💎 per player\n` +
-                  `🏆 **Prize Pool:** ${game.totalPrizePool} 💎\n` +
-                  `🥇 **1st Place:** ${Math.floor(game.totalPrizePool * 0.5)} 💎 (50%)\n` +
-                  `🥈 **2nd Place:** ${Math.floor(game.totalPrizePool * 0.3)} 💎 (30%)\n` +
-                  `🥉 **3rd Place:** ${Math.floor(game.totalPrizePool * 0.2)} 💎 (20%)\n\n`
-                : "";
-
-        const embed = new EmbedBuilder()
-            .setTitle("🃏 UNO Showdown 3D - Diamond Betting Lobby")
-            .setDescription(
-                `**Game Creator:** ${creator.displayName}\n\n` +
-                    `**🎮 UNO BETTING LOBBY 🎮**\n` +
-                    `\`\`\`\n` +
-                    `    🃏 UNO SHOWDOWN 🃏\n` +
-                    `  ╔═══════════════════╗\n` +
-                    `  ║ 🎮 Players: 1/10  ║\n` +
-                    `  ║ 💎 Betting: ${betAmount} 💎   ║\n` +
-                    `  ║ 🚀 Ready to Start ║\n` +
-                    `  ╚═══════════════════╝\n` +
-                    `\`\`\`\n\n` +
-                    bettingInfo +
-                    `**Players (1):** ${creator.displayName} ✅\n\n` +
-                    `**Rules:**\n` +
-                    `• 2-10 players can join\n` +
-                    `• Each player must bet ${betAmount} 💎 to join\n` +
-                    `• Match color or number to play\n` +
-                    `• Call UNO when you have 1 card!\n` +
-                    `• Winners get prize distribution!\n\n` +
-                    `**Special Cards:**\n` +
-                    `🔄 Reverse • ⏭️ Skip • ➕2️⃣ Draw 2\n` +
-                    `🌈 Wild • 🌈⚡ Wild Draw 4\n\n` +
-                    `⚠️ **Auto-cleanup in 10 seconds!**`,
-            )
-            .setColor(0xffd700)
-            .setThumbnail("https://i.imgur.com/AtC9Vjy.png")
-            .setTimestamp();
-
-        const components = createUnoLobbyButtons(game.gameId);
-        const message = await channel.send({
-            embeds: [embed],
-            components: [components],
-        });
-
-        // Start auto-cleanup timer
-        game.startAutoCleanup(message);
-
-        return message;
-    } catch (error) {
-        console.error("Error starting UNO game:", error);
-        activeUnoGames.delete(game.gameId);
-    }
-}
-
-async function handleUnoJoin(interaction, gameId) {
-    const game = activeUnoGames.get(gameId);
-    if (!game) {
-        return await interaction.reply({
-            content: "❌ This game no longer exists!",
-            ephemeral: true,
-        });
-    }
-
-    if (game.status !== "lobby") {
-        return await interaction.reply({
-            content: "❌ This game has already started!",
-            ephemeral: true,
-        });
-    }
-
-    // Check betting requirements
-    if (game.betAmount > 0) {
-        const userData = pointsSystem.getUserData(interaction.user.id);
-        if (userData.points < game.betAmount) {
-            return await interaction.reply({
-                content: `❌ You need ${game.betAmount} 💎 to join this betting game! You have ${userData.points} 💎`,
-                ephemeral: true,
-            });
-        }
-    }
-
-    if (game.addPlayer(interaction.user.id)) {
-        // Deduct bet if required
-        if (game.betAmount > 0) {
-            const userData = pointsSystem.getUserData(interaction.user.id);
-            userData.points -= game.betAmount;
-            userData.total_spent += game.betAmount;
-            game.addPlayerBet(interaction.user.id, game.betAmount);
-            await pointsSystem.saveData();
-        }
-
-        // Cancel auto-cleanup when someone joins
-        game.cancelAutoCleanup();
-
-        await updateUnoLobbyDisplay(interaction, game);
-
-        await interaction.followUp({
-            content: `🎮 ${interaction.user.displayName} joined the UNO betting game and paid ${game.betAmount} 💎!`,
-            ephemeral: false,
-        });
-    } else {
-        await interaction.reply({
-            content: "❌ You're already in this game or it's full!",
-            ephemeral: true,
-        });
-    }
-}
-
-async function handleUnoAddAI(interaction, gameId) {
-    const game = activeUnoGames.get(gameId);
-    if (!game) {
-        return await interaction.reply({
-            content: "❌ This game no longer exists!",
-            ephemeral: true,
-        });
-    }
-
-    if (game.status !== "lobby") {
-        return await interaction.reply({
-            content: "❌ This game has already started!",
-            ephemeral: true,
-        });
-    }
-
-    if (interaction.user.id !== game.creatorId) {
-        return await interaction.reply({
-            content: "❌ Only the game creator can add AI bots!",
-            ephemeral: true,
-        });
-    }
-
-    const aiBot = game.addAIPlayer();
-    if (aiBot) {
-        game.cancelAutoCleanup();
-        await updateUnoLobbyDisplay(interaction, game);
-
-        await interaction.followUp({
-            content: `🤖 ${aiBot.name} (${aiBot.difficulty.toUpperCase()} AI) joined the game!`,
-            ephemeral: false,
-        });
-    } else {
-        await interaction.reply({
-            content:
-                "❌ Cannot add more AI bots (game full or no AI available)!",
-            ephemeral: true,
-        });
-    }
-}
-
-async function updateUnoLobbyDisplay(interaction, game) {
-    const playerList = await Promise.all(
-        game.players.map(async (id) => {
-            if (game.aiPlayers.has(id)) {
-                const aiData = game.aiPlayers.get(id);
-                return `${aiData.name} ✅ (${aiData.difficulty.toUpperCase()} AI)`;
-            }
-            try {
-                const user = await client.users.fetch(id);
-                return user.displayName + " ✅";
-            } catch {
-                return `User ${id} ✅`;
-            }
-        }),
-    );
-
-    const bettingInfo =
-        game.betAmount > 0
-            ? `💎 **Diamond Betting:** ${game.betAmount} 💎 per player\n` +
-              `🏆 **Prize Pool:** ${game.totalPrizePool} 💎\n` +
-              `🥇 **1st Place:** ${Math.floor(game.totalPrizePool * 0.5)} 💎 (50%)\n` +
-              `🥈 **2nd Place:** ${Math.floor(game.totalPrizePool * 0.3)} 💎 (30%)\n` +
-              `🥉 **3rd Place:** ${Math.floor(game.totalPrizePool * 0.2)} 💎 (20%)\n\n`
-            : "";
-
-    const embed = new EmbedBuilder()
-        .setTitle("🃏 UNO Showdown 3D - Diamond Betting Lobby")
-        .setDescription(
-            `**Game Creator:** ${playerList[0].replace(" ✅", "").replace(" (EASY AI)", "").replace(" (MEDIUM AI)", "").replace(" (HARD AI)", "").replace(" (EXPERT AI)", "")}\n\n` +
-                `**🎮 UNO BETTING LOBBY 🎮**\n` +
-                `\`\`\`\n` +
-                `    🃏 UNO SHOWDOWN 🃏\n` +
-                `  ╔═══════════════════╗\n` +
-                `  ║ 🎮 Players: ${game.players.length}/10  ║\n` +
-                `  ║ 💎 Betting: ${game.betAmount} 💎   ║\n` +
-                `  ║ 🤖 AI Support: ON ║\n` +
-                `  ║ 🚀 Ready to Start ║\n` +
-                `  ╚═══════════════════╝\n` +
-                `\`\`\`\n\n` +
-                bettingInfo +
-                `**Players (${game.players.length}):** ${playerList.join(", ")}\n\n` +
-                `**Rules:**\n` +
-                `• 2-10 players can join\n` +
-                `• 🤖 AI bots can fill empty slots\n` +
-                `• Each player must bet ${game.betAmount} 💎\n` +
-                `• Match color or number to play\n` +
-                `• Call UNO when you have 1 card!\n` +
-                `• Winners get prize distribution!\n\n` +
-                `**AI Difficulty Levels:**\n` +
-                `🎲 EASY • 🎯 MEDIUM • 🎮 HARD • 🤖 EXPERT\n\n` +
-                `**Special Cards:**\n` +
-                `🔄 Reverse • ⏭️ Skip • ➕2️⃣ Draw 2\n` +
-                `🌈 Wild • 🌈⚡ Wild Draw 4\n\n` +
-                `✅ **Game active - auto-cleanup disabled**`,
-        )
-        .setColor(0x00ff00)
-        .setTimestamp();
-
-    const components = createUnoLobbyButtons(game.gameId);
-    await interaction.update({ embeds: [embed], components });
-}
-
-async function handleUnoStart(interaction, gameId) {
-    const game = activeUnoGames.get(gameId);
-    if (!game) {
-        return await interaction.reply({
-            content: "❌ This game no longer exists!",
-            ephemeral: true,
-        });
-    }
-
-    if (interaction.user.id !== game.creatorId) {
-        return await interaction.reply({
-            content: "❌ Only the game creator can start the game!",
-            ephemeral: true,
-        });
-    }
-
-    if (game.players.length < 2) {
-        return await interaction.reply({
-            content: "❌ Need at least 2 players to start!",
-            ephemeral: true,
-        });
-    }
-
-    game.status = "active";
-    game.dealCards();
-
-    const currentPlayer = await client.users.fetch(game.getCurrentPlayer());
-    const topCard = game.discardPile[game.discardPile.length - 1];
-
-    const embed = new EmbedBuilder()
-        .setTitle("🃏 UNO Showdown 3D - Game Started!")
-        .setDescription(
-            `**🎮 GAME ACTIVE 🎮**\n` +
-                `\`\`\`\n` +
-                `    🃏 UNO IN PROGRESS 🃏\n` +
-                `  ╔═══════════════════════╗\n` +
-                `  ║ Players: ${game.players.length}           ║\n` +
-                `  ║ Current: ${currentPlayer.displayName.substring(0, 10)}    ║\n` +
-                `  ╚═══════════════════════╝\n` +
-                `\`\`\`\n\n` +
-                `**Current Player:** ${currentPlayer.displayName}\n` +
-                `**Top Card:** ${topCard.emoji}\n` +
-                `**Direction:** ${game.direction === 1 ? "➡️ Clockwise" : "⬅️ Counter-clockwise"}\n\n` +
-                `**Players:**\n` +
-                (
-                    await Promise.all(
-                        game.players.map(async (id, index) => {
-                            const user = await client.users.fetch(id);
-                            const cards = game.hands.get(id).length;
-                            const indicator =
-                                index === game.currentPlayerIndex ? "👉" : "  ";
-                            return `${indicator} ${user.displayName}: ${cards} cards`;
-                        }),
-                    )
-                ).join("\n") +
-                `\n\n**Instructions:**\n` +
-                `• Use buttons to play, draw, or call UNO\n` +
-                `• Match the color or number\n` +
-                `• Call UNO when you have 1 card left!\n\n` +
-                `⚠️ **Auto-cleanup in 10 seconds if no activity!**`,
-        )
-        .setColor(0x00ff00)
-        .setTimestamp();
-
-    const components = createUnoGameButtons(game.gameId);
-    await interaction.update({ embeds: [embed], components: [components] });
-
-    // Restart auto-cleanup for the active game
-    game.startAutoCleanup(interaction.message);
-}
-
-async function handleUnoCancel(interaction, gameId) {
-    const game = activeUnoGames.get(gameId);
-    if (!game) {
-        return await interaction.reply({
-            content: "❌ This game no longer exists!",
-            ephemeral: true,
-        });
-    }
-
-    if (interaction.user.id !== game.creatorId) {
-        return await interaction.reply({
-            content: "❌ Only the game creator can cancel the game!",
-            ephemeral: true,
-        });
-    }
-
-    game.cancelAutoCleanup();
-    activeUnoGames.delete(gameId);
-
-    const embed = new EmbedBuilder()
-        .setTitle("❌ UNO Game Cancelled")
-        .setDescription("The game has been cancelled by the creator.")
-        .setColor(0xff0000);
-
-    await interaction.update({ embeds: [embed], components: [] });
-
-    // Auto-delete cancellation message
-    setTimeout(async () => {
-        try {
-            await interaction.message.delete();
-        } catch (error) {
-            console.log(
-                "Could not delete cancelled UNO message:",
-                error.message,
-            );
-        }
-    }, 5000);
-}
 
 // Utility functions
 function createDailyClaimButtons() {
@@ -1214,6 +566,43 @@ function createInfoPanelButtons() {
 client.once("ready", async () => {
     console.log(`${client.user.tag} has connected to Discord!`);
     console.log(`Bot is in ${client.guilds.cache.size} guilds`);
+
+    // Send bot online notification with auto-delete
+    try {
+        const adminChannel = client.channels.cache.get(CHANNELS.admin_reports);
+        if (adminChannel) {
+            const embed = new EmbedBuilder()
+                .setTitle("🟢 Bot Status Update")
+                .setDescription(
+                    `**${client.user.tag} is now ONLINE!**\n\n🔄 **System Status:**\n✅ Connected to Discord\n✅ All systems operational\n✅ Admin tracking active\n✅ Auto-cleanup enabled\n✅ Enhanced message cleanup active\n\n⏰ **Startup Time:** <t:${Math.floor(Date.now() / 1000)}:F>\n\n🧹 **Auto-Cleanup:** This message will auto-delete in 2 minutes`,
+                )
+                .setColor(0x00ff00)
+                .setTimestamp();
+
+            const message = await adminChannel.send({ embeds: [embed] });
+            console.log("📧 Bot online notification sent to admin channel");
+
+            // Auto-delete the bot online notification after 2 minutes
+            setTimeout(
+                async () => {
+                    try {
+                        await message.delete();
+                        console.log(
+                            "🧹 Auto-deleted bot online notification message",
+                        );
+                    } catch (error) {
+                        console.log(
+                            "Could not auto-delete online notification:",
+                            error.message,
+                        );
+                    }
+                },
+                2 * 60 * 1000,
+            ); // 2 minutes
+        }
+    } catch (error) {
+        console.error("Failed to send online notification:", error);
+    }
 
     // Register slash commands
     const commands = [
@@ -1361,25 +750,24 @@ client.once("ready", async () => {
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
         new SlashCommandBuilder()
-            .setName("uno")
-            .setDescription("Start a UNO Showdown 3D game")
-            .addChannelOption((option) =>
-                option
-                    .setName("channel")
-                    .setDescription("Channel to start the game in (optional)")
-                    .setRequired(false),
-            ),
-
-        new SlashCommandBuilder()
-            .setName("send_system_panel")
-            .setDescription(
-                "Admin: Send the comprehensive system commands panel",
-            )
+            .setName("send_admin_tracking_panel")
+            .setDescription("Admin: Send the admin login tracking panel")
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
         new SlashCommandBuilder()
-            .setName("send_uno_ticket_panel")
-            .setDescription("Admin: Send the UNO ticket system panel")
+            .setName("admin_report")
+            .setDescription("Admin: Generate manual admin activity report")
+            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+        new SlashCommandBuilder()
+            .setName("clean_full_channel")
+            .setDescription("Admin: Complete cleanup of specific channel (all messages)")
+            .addStringOption((option) =>
+                option
+                    .setName("channel_id")
+                    .setDescription("Channel ID to completely clean")
+                    .setRequired(true),
+            )
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
     ];
 
@@ -1390,25 +778,150 @@ client.once("ready", async () => {
         console.error("Failed to register commands:", error);
     }
 
-    // Send startup panels and setup automatic UNO system
+    // Send startup panels
     setTimeout(sendStartupPanels, 10000);
-    
-    // Automatic UNO system ping and cleanup
-    setTimeout(async () => {
-        await setupAutoUnoSystem();
-    }, 15000); // Wait for panels to be sent first
 });
 
 // Interaction handlers
+// Real-time presence update monitoring for logged-in admins
+client.on("presenceUpdate", async (oldPresence, newPresence) => {
+    try {
+        if (!newPresence || !newPresence.user) return;
+
+        const userId = newPresence.user.id;
+        const adminData = pointsSystem.data.admin_tracking[userId];
+
+        // Check if this user has an active admin session
+        if (
+            adminData &&
+            adminData.currentSession &&
+            adminData.currentSession.isActive
+        ) {
+            const oldStatus = oldPresence?.status || "unknown";
+            const newStatus = newPresence.status;
+
+            // If user goes offline, start auto-logout timer
+            if (newStatus === "offline" || !newStatus) {
+                console.log(
+                    `🔄 Admin ${newPresence.user.username} went offline - starting auto-logout timer`,
+                );
+
+                // Set a shorter auto-logout timer for immediate offline detection
+                setTimeout(async () => {
+                    // Double-check if user is still offline and session is still active
+                    const currentData =
+                        pointsSystem.data.admin_tracking[userId];
+                    if (
+                        currentData &&
+                        currentData.currentSession &&
+                        currentData.currentSession.isActive
+                    ) {
+                        const member =
+                            newPresence.guild?.members.cache.get(userId);
+                        if (
+                            !member ||
+                            !member.presence ||
+                            member.presence.status === "offline"
+                        ) {
+                            console.log(
+                                `🔄 Auto-logout admin ${newPresence.user.username} due to offline status (real-time detection)`,
+                            );
+
+                            const sessionData =
+                                pointsSystem.endAdminSession(userId);
+                            await pointsSystem.saveData();
+
+                            // Send notification
+                            try {
+                                const adminChannel = client.channels.cache.get(
+                                    CHANNELS.admin_reports,
+                                );
+                                if (adminChannel && sessionData) {
+                                    const hours = Math.floor(
+                                        sessionData.duration / 60,
+                                    );
+                                    const minutes = sessionData.duration % 60;
+                                    const timeString =
+                                        hours > 0
+                                            ? `${hours}h ${minutes}m`
+                                            : `${minutes}m`;
+
+                                    const embed = new EmbedBuilder()
+                                        .setTitle("🔴 Real-Time Auto-Logout")
+                                        .setDescription(
+                                            `**${newPresence.user.displayName}** was automatically logged out\n\n🔐 **Reason:** Discord status changed to offline\n⏱️ **Session Duration:** ${timeString}\n🔓 **Auto-Logout:** <t:${Math.floor(Date.now() / 1000)}:F>\n\n⚡ **System:** Real-time presence detection`,
+                                        )
+                                        .setColor(0xff0000)
+                                        .setTimestamp();
+
+                                    await adminChannel.send({
+                                        embeds: [embed],
+                                    });
+                                }
+                            } catch (error) {
+                                console.log(
+                                    "Could not send real-time logout notification:",
+                                    error.message,
+                                );
+                            }
+                        }
+                    }
+                }, 30 * 1000); // 30 second delay to avoid false positives
+            } else if (
+                (oldStatus === "offline" || !oldStatus) &&
+                (newStatus === "online" ||
+                    newStatus === "idle" ||
+                    newStatus === "dnd")
+            ) {
+                // User came back online - update activity
+                adminData.lastActivity = new Date().toISOString();
+                console.log(
+                    `🟢 Admin ${newPresence.user.username} came back online`,
+                );
+            }
+        }
+    } catch (error) {
+        console.error("Error in presence update monitoring:", error);
+    }
+});
+
 client.on("interactionCreate", async (interaction) => {
-    if (interaction.isCommand()) {
-        await handleSlashCommand(interaction);
-    } else if (interaction.isButton()) {
-        await handleButtonInteraction(interaction);
-    } else if (interaction.isStringSelectMenu()) {
-        await handleSelectMenuInteraction(interaction);
-    } else if (interaction.isModalSubmit()) {
-        await handleModalSubmit(interaction);
+    try {
+        if (interaction.isCommand()) {
+            await handleSlashCommand(interaction);
+        } else if (interaction.isButton()) {
+            await handleButtonInteraction(interaction);
+        } else if (interaction.isStringSelectMenu()) {
+            await handleSelectMenuInteraction(interaction);
+        } else if (interaction.isModalSubmit()) {
+            await handleModalSubmit(interaction);
+        }
+    } catch (error) {
+        console.error("🚨 Interaction error occurred:", error);
+        
+        // Auto-cleanup gift card support ticket interactions on error
+        try {
+            await cleanupGiftCardSupportTicketInteractions();
+            console.log("🧹 Gift card support ticket cleanup completed after error");
+        } catch (cleanupError) {
+            console.error("❌ Error during emergency cleanup:", cleanupError);
+        }
+        
+        // Try to respond to the user if possible
+        try {
+            const errorEmbed = new EmbedBuilder()
+                .setTitle("❌ System Error")
+                .setDescription("An error occurred. The system has been automatically cleaned up.")
+                .setColor(0xff0000);
+                
+            if (interaction.replied || interaction.deferred) {
+                await interaction.editReply({ embeds: [errorEmbed] });
+            } else {
+                await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+            }
+        } catch (responseError) {
+            console.error("Could not send error response:", responseError);
+        }
     }
 });
 
@@ -1477,14 +990,14 @@ async function handleSlashCommand(interaction) {
             case "cleanup_old_messages":
                 await handleCleanupOldMessages(interaction);
                 break;
-            case "uno":
-                await handleUnoCommand(interaction);
+            case "send_admin_tracking_panel":
+                await handleSendAdminTrackingPanel(interaction);
                 break;
-            case "send_system_panel":
-                await handleSendSystemPanel(interaction);
+            case "admin_report":
+                await handleAdminReport(interaction);
                 break;
-            case "send_uno_ticket_panel":
-                await handleSendUnoTicketPanel(interaction);
+            case "clean_full_channel":
+                await handleCleanFullChannel(interaction);
                 break;
         }
     } catch (error) {
@@ -1585,6 +1098,15 @@ async function handleButtonInteraction(interaction) {
                 }
                 await showAdminGenerateGiftCardModal(interaction);
                 break;
+            case "admin_login":
+                await handleAdminLogin(interaction);
+                break;
+            case "admin_logout":
+                await handleAdminLogout(interaction);
+                break;
+            case "admin_status":
+                await handleAdminStatus(interaction);
+                break;
         }
 
         // Handle ticket approval/rejection
@@ -1626,70 +1148,6 @@ async function handleButtonInteraction(interaction) {
             const eventId = customId.replace("mine_diamonds_", "");
             await handleDiamondMining(interaction, eventId);
         }
-
-        // Handle UNO ticket system buttons
-        switch (customId) {
-            case "create_uno_ticket":
-                await handleCreateUnoTicket(interaction);
-                break;
-            case "uno_rules_guide":
-                await handleUnoRulesGuide(interaction);
-                break;
-            case "uno_active_games":
-                await handleUnoActiveGames(interaction);
-                break;
-        }
-
-        // Handle UNO ticket submission
-        if (customId === "uno_ticket_submit") {
-            await handleUnoTicketSubmit(interaction);
-        }
-
-        // Handle UNO ticket actions
-        if (customId.startsWith("uno_ticket_")) {
-            const parts = customId.split("_");
-            const action = parts[2];
-            const ticketId = parts[3];
-            
-            switch (action) {
-                case "join":
-                    await handleUnoTicketJoin(interaction, ticketId);
-                    break;
-                case "start":
-                    await handleUnoTicketStart(interaction, ticketId);
-                    break;
-                case "addai":
-                    await handleUnoTicketAddAI(interaction, ticketId);
-                    break;
-                case "cancel":
-                    await handleUnoTicketCancel(interaction, ticketId);
-                    break;
-            }
-        }
-
-        // Handle UNO game buttons
-        if (customId.startsWith("uno_join_")) {
-            const gameId = customId.replace("uno_join_", "");
-            await handleUnoJoin(interaction, gameId);
-        } else if (customId.startsWith("uno_add_ai_")) {
-            const gameId = customId.replace("uno_add_ai_", "");
-            await handleUnoAddAI(interaction, gameId);
-        } else if (customId.startsWith("uno_start_")) {
-            const gameId = customId.replace("uno_start_", "");
-            await handleUnoStart(interaction, gameId);
-        } else if (customId.startsWith("uno_cancel_")) {
-            const gameId = customId.replace("uno_cancel_", "");
-            await handleUnoCancel(interaction, gameId);
-        } else if (customId.startsWith("uno_play_")) {
-            const gameId = customId.replace("uno_play_", "");
-            await handleUnoPlay(interaction, gameId);
-        } else if (customId.startsWith("uno_draw_")) {
-            const gameId = customId.replace("uno_draw_", "");
-            await handleUnoDraw(interaction, gameId);
-        } else if (customId.startsWith("uno_call_")) {
-            const gameId = customId.replace("uno_call_", "");
-            await handleUnoCall(interaction, gameId);
-        }
     } catch (error) {
         console.error("Error handling button interaction:", error);
     }
@@ -1698,10 +1156,6 @@ async function handleButtonInteraction(interaction) {
 async function handleSelectMenuInteraction(interaction) {
     if (interaction.customId === "gift_card_select") {
         await handleGiftCardSelection(interaction);
-    } else if (interaction.customId === "uno_ai_mode_select") {
-        await handleUnoAIModeSelect(interaction);
-    } else if (interaction.customId === "uno_max_players_select") {
-        await handleUnoMaxPlayersSelect(interaction);
     }
 }
 
@@ -1721,10 +1175,6 @@ async function handleModalSubmit(interaction) {
             await handleAdminGiftCardGeneration(interaction);
         } else if (customId === "point_drop_ticket_modal") {
             await handlePointDropTicketSubmission(interaction);
-        } else if (customId.startsWith("uno_bet_modal_")) {
-            await handleUnoBetModal(interaction);
-        } else if (customId === "uno_ticket_modal") {
-            await handleUnoTicketModal(interaction);
         }
     } catch (error) {
         console.error("Error handling modal submit:", error);
@@ -2383,56 +1833,133 @@ async function handleGiftCardSelection(interaction) {
         return;
     }
 
+    // Generate unique gift card code
+    let giftCardCode;
+    do {
+        giftCardCode = pointsSystem.generateGiftCardCode();
+    } while (pointsSystem.data.generated_gift_cards[giftCardCode]);
+
+    // Deduct diamonds
     userData.points -= card.cost;
     userData.total_spent += card.cost;
     userData.gift_cards_redeemed = userData.gift_cards_redeemed || [];
     userData.gift_cards_redeemed.push(cardType);
 
-    const requestId =
-        Math.random().toString(36).substring(2, 15) +
-        Math.random().toString(36).substring(2, 15);
-    pointsSystem.data.gift_card_requests[requestId] = {
-        user_id: interaction.user.id,
-        card_type: cardType,
-        status: "pending",
-        timestamp: new Date().toISOString(),
+    // Create gift card
+    const giftCard = {
+        value: card.cost,
+        status: "valid",
+        created_at: new Date().toISOString(),
+        created_by: interaction.user.id,
+        claimed_by: null,
+        claimed_at: null,
+        void_reason: null,
+        admin_generated: false,
+        card_type: cardType
     };
 
-    const embed = new EmbedBuilder()
-        .setTitle("🎁 Gift Card Purchase Successful!")
-        .setDescription(
-            `**${card.name}** purchased for ${card.cost} 💎\n\n**Request ID:** \`${requestId}\`\n\nYour gift card request has been submitted! An admin will process it soon.`,
-        )
-        .addFields(
-            {
-                name: "💰 New Balance",
-                value: `${userData.points} 💎`,
-                inline: true,
-            },
-            {
-                name: "📊 Total Spent",
-                value: `${userData.total_spent} 💎`,
-                inline: true,
-            },
-        )
-        .setColor(0x00ff00);
+    pointsSystem.data.generated_gift_cards[giftCardCode] = giftCard;
 
-    const reply = await interaction.update({ embeds: [embed], components: [] });
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + GIFT_CARD_SETTINGS.validity_days);
 
-    // Auto-delete the gift card purchase result after 5 minutes
-    setTimeout(
-        async () => {
-            try {
-                await reply.delete();
-            } catch (error) {
-                console.log(
-                    "Could not delete gift card purchase result:",
-                    error.message,
-                );
-            }
-        },
-        5 * 60 * 1000,
-    ); // 5 minutes
+    // Send DM with gift card code immediately
+    try {
+        const dmEmbed = new EmbedBuilder()
+            .setTitle(`🎁 ${card.name} Generated!`)
+            .setDescription(
+                `**🎉 Congratulations!** Your ${card.name} has been created successfully!\n\n**Gift Card Code:** \`${giftCardCode}\`\n**Type:** ${card.name}\n**Value:** ${card.cost} 💎\n**Created:** <t:${Math.floor(Date.now() / 1000)}:F>\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>\n\n🔒 **Keep this code secure!** You can:\n• Use it for PCRP rewards\n• Check its status with \`/check_gift_card\`\n\n✅ **Valid for 7 days from creation**`,
+            )
+            .setColor(0x00ff00)
+            .setTimestamp();
+
+        await interaction.user.send({ embeds: [dmEmbed] });
+
+        // Success response
+        const successEmbed = new EmbedBuilder()
+            .setTitle("🎁 Gift Card Purchase Successful!")
+            .setDescription(
+                `**${card.name}** purchased for ${card.cost} 💎\n\n📧 **Delivery:** Code sent to your DMs\n⏰ **Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>\n\n✅ **Transaction Complete!**`,
+            )
+            .addFields(
+                {
+                    name: "💰 New Balance",
+                    value: `${userData.points} 💎`,
+                    inline: true,
+                },
+                {
+                    name: "📊 Total Spent",
+                    value: `${userData.total_spent} 💎`,
+                    inline: true,
+                },
+                {
+                    name: "📧 DM Status",
+                    value: "✅ Code sent successfully!",
+                    inline: true,
+                }
+            )
+            .setColor(0x00ff00);
+
+        const reply = await interaction.update({ embeds: [successEmbed], components: [] });
+
+        // Auto-delete after 5 minutes
+        setTimeout(
+            async () => {
+                try {
+                    await reply.delete();
+                } catch (error) {
+                    console.log(
+                        "Could not delete gift card success message:",
+                        error.message,
+                    );
+                }
+            },
+            5 * 60 * 1000,
+        );
+
+    } catch (error) {
+        // DM failed - show code in the interaction response
+        const fallbackEmbed = new EmbedBuilder()
+            .setTitle("🎁 Gift Card Purchase Successful!")
+            .setDescription(
+                `**Gift Card Code:** \`${giftCardCode}\`\n\n**${card.name}** purchased for ${card.cost} 💎\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>\n\n⚠️ **Could not send DM!** Please save this code securely.`,
+            )
+            .addFields(
+                {
+                    name: "💰 New Balance",
+                    value: `${userData.points} 💎`,
+                    inline: true,
+                },
+                {
+                    name: "📊 Total Spent",
+                    value: `${userData.total_spent} 💎`,
+                    inline: true,
+                },
+                {
+                    name: "⚠️ DM Failed",
+                    value: "Enable DMs to receive codes privately",
+                    inline: true,
+                }
+            )
+            .setColor(0xffaa00);
+
+        const reply = await interaction.update({ embeds: [fallbackEmbed], components: [] });
+
+        // Auto-delete after 10 minutes for security
+        setTimeout(
+            async () => {
+                try {
+                    await reply.delete();
+                } catch (error) {
+                    console.log(
+                        "Could not delete gift card fallback message:",
+                        error.message,
+                    );
+                }
+            },
+            10 * 60 * 1000,
+        );
+    }
 
     await pointsSystem.saveData();
 }
@@ -2607,11 +2134,21 @@ async function handleOpenGiftTicket(interaction) {
     const embed = new EmbedBuilder()
         .setTitle("🎫 Gift Card Support Ticket")
         .setDescription(
-            "**How to get your gift card:**\n\n1. Use `/convert_points` to purchase a gift card\n2. Wait for admin approval\n3. Receive your gift card code via DM\n\n**Need help?** Contact an admin!",
+            "**How to get your gift card:**\n\n1. Use `/convert_points` to purchase a gift card\n2. Wait for admin approval\n3. Receive your gift card code via DM\n\n**Need help?** Contact an admin!\n\n🧹 **Note:** This message will auto-delete in 30 seconds.",
         )
         .setColor(0x0099ff);
 
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+    const reply = await interaction.reply({ embeds: [embed], ephemeral: true });
+    
+    // Auto-delete after 30 seconds
+    setTimeout(async () => {
+        try {
+            await reply.delete();
+            console.log("🧹 Auto-deleted gift card support ticket response");
+        } catch (error) {
+            console.log("Could not delete gift card support ticket response:", error.message);
+        }
+    }, 30 * 1000); // 30 seconds
 }
 
 async function handleSendGiftCardPanel(interaction) {
@@ -2829,6 +2366,7 @@ async function handleGiftCardGeneration(interaction) {
         claimed_by: null,
         claimed_at: null,
         void_reason: null,
+        admin_generated: false
     };
 
     pointsSystem.data.generated_gift_cards[giftCardCode] = giftCard;
@@ -2836,64 +2374,103 @@ async function handleGiftCardGeneration(interaction) {
     const expiryDate = new Date();
     expiryDate.setDate(expiryDate.getDate() + GIFT_CARD_SETTINGS.validity_days);
 
-    const embed = new EmbedBuilder()
-        .setTitle("🎁 Gift Card Generated Successfully!")
-        .setDescription(
-            `**Gift Card Code:** \`${giftCardCode}\`\n\n**Value:** ${diamondAmount.toLocaleString()} 💎\n**Status:** ✅ Valid\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>\n\n⚠️ **Important:** Save this code securely! You can check its status anytime using the "Check Gift Card" button.`,
-        )
-        .addFields(
-            {
-                name: "💰 New Balance",
-                value: `${userData.points.toLocaleString()} 💎`,
-                inline: true,
-            },
-            {
-                name: "📊 Total Spent",
-                value: `${userData.total_spent.toLocaleString()} 💎`,
-                inline: true,
-            },
-        )
-        .setColor(0x00ff00);
-
-    // Try to send DM with gift card code
+    // Send DM with gift card code immediately
     try {
         const dmEmbed = new EmbedBuilder()
-            .setTitle("🎁 Your Generated Gift Card")
+            .setTitle("🎁 Your Gift Card Generated!")
             .setDescription(
-                `**Gift Card Code:** \`${giftCardCode}\`\n**Value:** ${diamondAmount.toLocaleString()} 💎\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>\n\nKeep this code safe! You can share it with others or use it yourself.`,
+                `**🎉 Congratulations!** Your gift card has been created successfully!\n\n**Gift Card Code:** \`${giftCardCode}\`\n**Value:** ${diamondAmount.toLocaleString()} 💎\n**Created:** <t:${Math.floor(Date.now() / 1000)}:F>\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>\n\n🔒 **Keep this code secure!** You can:\n• Share it with others\n• Use it yourself\n• Check its status with \`/check_gift_card\`\n\n✅ **Valid for 7 days from creation**`,
+            )
+            .setColor(0x00ff00)
+            .setTimestamp();
+
+        await interaction.user.send({ embeds: [dmEmbed] });
+
+        // Success response
+        const successEmbed = new EmbedBuilder()
+            .setTitle("🎁 Gift Card Created Successfully!")
+            .setDescription(
+                `**Your gift card has been generated!**\n\n💎 **Amount:** ${diamondAmount.toLocaleString()} diamonds\n📧 **Delivery:** Code sent to your DMs\n⏰ **Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>\n\n✅ **Transaction Complete!**`,
+            )
+            .addFields(
+                {
+                    name: "💰 New Balance",
+                    value: `${userData.points.toLocaleString()} 💎`,
+                    inline: true,
+                },
+                {
+                    name: "📊 Total Spent",
+                    value: `${userData.total_spent.toLocaleString()} 💎`,
+                    inline: true,
+                },
+                {
+                    name: "📧 DM Status",
+                    value: "✅ Code sent successfully!",
+                    inline: true,
+                }
             )
             .setColor(0x00ff00);
 
-        await interaction.user.send({ embeds: [dmEmbed] });
-        embed.addFields({
-            name: "📧 DM Sent",
-            value: "Gift card code sent to your DMs!",
-            inline: false,
-        });
+        const reply = await interaction.reply({ embeds: [successEmbed], ephemeral: true });
+
+        // Auto-delete after 5 minutes
+        setTimeout(
+            async () => {
+                try {
+                    await reply.delete();
+                } catch (error) {
+                    console.log(
+                        "Could not delete gift card success message:",
+                        error.message,
+                    );
+                }
+            },
+            5 * 60 * 1000,
+        );
+
     } catch (error) {
-        embed.addFields({
-            name: "⚠️ DM Failed",
-            value: "Could not send DM. Please save the code above!",
-            inline: false,
-        });
+        // DM failed - show code in the interaction response
+        const fallbackEmbed = new EmbedBuilder()
+            .setTitle("🎁 Gift Card Generated!")
+            .setDescription(
+                `**Gift Card Code:** \`${giftCardCode}\`\n\n**Value:** ${diamondAmount.toLocaleString()} 💎\n**Status:** ✅ Valid\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>\n\n⚠️ **Could not send DM!** Please save this code securely.`,
+            )
+            .addFields(
+                {
+                    name: "💰 New Balance",
+                    value: `${userData.points.toLocaleString()} 💎`,
+                    inline: true,
+                },
+                {
+                    name: "📊 Total Spent",
+                    value: `${userData.total_spent.toLocaleString()} 💎`,
+                    inline: true,
+                },
+                {
+                    name: "⚠️ DM Failed",
+                    value: "Enable DMs to receive codes privately",
+                    inline: true,
+                }
+            )
+            .setColor(0xffaa00);
+
+        const reply = await interaction.reply({ embeds: [fallbackEmbed], ephemeral: true });
+
+        // Auto-delete after 10 minutes for security
+        setTimeout(
+            async () => {
+                try {
+                    await reply.delete();
+                } catch (error) {
+                    console.log(
+                        "Could not delete gift card fallback message:",
+                        error.message,
+                    );
+                }
+            },
+            10 * 60 * 1000,
+        );
     }
-
-    const reply = await interaction.reply({ embeds: [embed], ephemeral: true });
-
-    // Auto-delete after 10 minutes for security
-    setTimeout(
-        async () => {
-            try {
-                await reply.delete();
-            } catch (error) {
-                console.log(
-                    "Could not delete gift card generation result:",
-                    error.message,
-                );
-            }
-        },
-        10 * 60 * 1000,
-    );
 
     await pointsSystem.saveData();
 }
@@ -2987,14 +2564,6 @@ async function handleCheckGiftCard(interaction) {
 }
 
 async function handleGenerateGiftCard(interaction) {
-    if (!hasAdminRole(interaction)) {
-        const embed = new EmbedBuilder()
-            .setTitle("❌ Access Denied")
-            .setDescription("You need the admin role to use this command.")
-            .setColor(0xff0000);
-        return await interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-
     if (interaction.channelId !== CHANNELS.gift_cards) {
         const embed = new EmbedBuilder()
             .setTitle("❌ Wrong Channel")
@@ -3034,6 +2603,7 @@ async function handleGenerateGiftCard(interaction) {
         claimed_by: null,
         claimed_at: null,
         void_reason: null,
+        admin_generated: false
     };
 
     pointsSystem.data.generated_gift_cards[giftCardCode] = giftCard;
@@ -3041,49 +2611,74 @@ async function handleGenerateGiftCard(interaction) {
     const expiryDate = new Date();
     expiryDate.setDate(expiryDate.getDate() + GIFT_CARD_SETTINGS.validity_days);
 
-    const embed = new EmbedBuilder()
-        .setTitle("🎁 Gift Card Generated Successfully!")
-        .setDescription(
-            `**Gift Card Code:** \`${giftCardCode}\`\n\n**Value:** ${diamondAmount.toLocaleString()} 💎\n**Status:** ✅ Valid\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>\n\n⚠️ **Important:** Save this code securely! You can check its status anytime using the "Check Gift Card" button.`,
-        )
-        .addFields(
-            {
-                name: "💰 New Balance",
-                value: `${userData.points.toLocaleString()} 💎`,
-                inline: true,
-            },
-            {
-                name: "📊 Total Spent",
-                value: `${userData.total_spent.toLocaleString()} 💎`,
-                inline: true,
-            },
-        )
-        .setColor(0x00ff00);
-
-    // Try to send DM with gift card code
+    // Send DM with gift card code immediately
     try {
         const dmEmbed = new EmbedBuilder()
-            .setTitle("🎁 Your Generated Gift Card")
+            .setTitle("🎁 Your Gift Card Generated!")
             .setDescription(
-                `**Gift Card Code:** \`${giftCardCode}\`\n**Value:** ${diamondAmount.toLocaleString()} 💎\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>\n\nKeep this code safe! You can share it with others or use it yourself.`,
+                `**🎉 Congratulations!** Your gift card has been created successfully!\n\n**Gift Card Code:** \`${giftCardCode}\`\n**Value:** ${diamondAmount.toLocaleString()} 💎\n**Created:** <t:${Math.floor(Date.now() / 1000)}:F>\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>\n\n🔒 **Keep this code secure!** You can:\n• Share it with others\n• Use it yourself\n• Check its status with \`/check_gift_card\`\n\n✅ **Valid for 7 days from creation**`,
+            )
+            .setColor(0x00ff00)
+            .setTimestamp();
+
+        await interaction.user.send({ embeds: [dmEmbed] });
+
+        // Success response
+        const successEmbed = new EmbedBuilder()
+            .setTitle("🎁 Gift Card Created Successfully!")
+            .setDescription(
+                `**Your gift card has been generated!**\n\n💎 **Amount:** ${diamondAmount.toLocaleString()} diamonds\n📧 **Delivery:** Code sent to your DMs\n⏰ **Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>\n\n✅ **Transaction Complete!**`,
+            )
+            .addFields(
+                {
+                    name: "💰 New Balance",
+                    value: `${userData.points.toLocaleString()} 💎`,
+                    inline: true,
+                },
+                {
+                    name: "📊 Total Spent",
+                    value: `${userData.total_spent.toLocaleString()} 💎`,
+                    inline: true,
+                },
+                {
+                    name: "📧 DM Status",
+                    value: "✅ Code sent successfully!",
+                    inline: true,
+                }
             )
             .setColor(0x00ff00);
 
-        await interaction.user.send({ embeds: [dmEmbed] });
-        embed.addFields({
-            name: "📧 DM Sent",
-            value: "Gift card code sent to your DMs!",
-            inline: false,
-        });
+        await interaction.reply({ embeds: [successEmbed], ephemeral: true });
+
     } catch (error) {
-        embed.addFields({
-            name: "⚠️ DM Failed",
-            value: "Could not send DM. Please save the code above!",
-            inline: false,
-        });
+        // DM failed - show code in the interaction response
+        const fallbackEmbed = new EmbedBuilder()
+            .setTitle("🎁 Gift Card Generated!")
+            .setDescription(
+                `**Gift Card Code:** \`${giftCardCode}\`\n\n**Value:** ${diamondAmount.toLocaleString()} 💎\n**Status:** ✅ Valid\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>\n\n⚠️ **Could not send DM!** Please save this code securely.`,
+            )
+            .addFields(
+                {
+                    name: "💰 New Balance",
+                    value: `${userData.points.toLocaleString()} 💎`,
+                    inline: true,
+                },
+                {
+                    name: "📊 Total Spent",
+                    value: `${userData.total_spent.toLocaleString()} 💎`,
+                    inline: true,
+                },
+                {
+                    name: "⚠️ DM Failed",
+                    value: "Enable DMs to receive codes privately",
+                    inline: true,
+                }
+            )
+            .setColor(0xffaa00);
+
+        await interaction.reply({ embeds: [fallbackEmbed], ephemeral: true });
     }
 
-    await interaction.reply({ embeds: [embed], ephemeral: true });
     await pointsSystem.saveData();
 }
 
@@ -3330,54 +2925,6 @@ async function handleRejectPointDrop(interaction) {
     });
 }
 
-async function handleUnoCommand(interaction) {
-    const targetChannel =
-        interaction.options.getChannel("channel") || interaction.channel;
-
-    // Check if target channel is the specified channel ID
-    if (targetChannel.id !== "1387168027027574875") {
-        const embed = new EmbedBuilder()
-            .setTitle("❌ Wrong Channel")
-            .setDescription(
-                "UNO games can only be started in the designated gaming channel!",
-            )
-            .setColor(0xff0000);
-        return await interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-
-    // Check if there's already an active game in this channel
-    for (const [gameId, game] of activeUnoGames) {
-        if (game.channelId === targetChannel.id) {
-            const embed = new EmbedBuilder()
-                .setTitle("❌ Game Already Active")
-                .setDescription(
-                    "There's already an UNO game running in this channel!",
-                )
-                .setColor(0xff0000);
-            return await interaction.reply({
-                embeds: [embed],
-                ephemeral: true,
-            });
-        }
-    }
-
-    // Show betting modal
-    const modal = new ModalBuilder()
-        .setCustomId(`uno_bet_modal_${targetChannel.id}`)
-        .setTitle("🎰 UNO Diamond Betting Setup");
-
-    const betInput = new TextInputBuilder()
-        .setCustomId("bet_amount")
-        .setLabel("Diamond Bet Amount (10-1000 per player)")
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder("Enter diamonds each player must bet...")
-        .setRequired(true)
-        .setMaxLength(4);
-
-    modal.addComponents(new ActionRowBuilder().addComponents(betInput));
-    await interaction.showModal(modal);
-}
-
 async function handleCleanupOldMessages(interaction) {
     if (!hasAdminRole(interaction)) {
         const embed = new EmbedBuilder()
@@ -3513,475 +3060,6 @@ async function showUserCommands(interaction) {
                 console.log(
                     "Could not delete user commands information:",
                     error.message,
-                );
-            }
-        },
-        5 * 60 * 1000,
-    ); // 5 minutes
-}
-
-async function handleUnoTicketJoin(interaction, ticketId) {
-    const ticket = unoTickets.get(ticketId);
-    if (!ticket) {
-        return await interaction.reply({
-            content: "❌ This ticket no longer exists!",
-            ephemeral: true,
-        });
-    }
-
-    if (ticket.status !== "open") {
-        return await interaction.reply({
-            content: "❌ This ticket is no longer accepting players!",
-            ephemeral: true,
-        });
-    }
-
-    if (ticket.players.includes(interaction.user.id)) {
-        return await interaction.reply({
-            content: "❌ You're already in this game!",
-            ephemeral: true,
-        });
-    }
-
-    if (ticket.players.length >= ticket.maxPlayers) {
-        return await interaction.reply({
-            content: "❌ This game is full!",
-            ephemeral: true,
-        });
-    }
-
-    // Check if user has enough diamonds
-    const userData = pointsSystem.getUserData(interaction.user.id);
-    if (userData.points < ticket.betAmount) {
-        return await interaction.reply({
-            content: `❌ You need ${ticket.betAmount} 💎 but only have ${userData.points} 💎!`,
-            ephemeral: true,
-        });
-    }
-
-    // Deduct bet and add player
-    userData.points -= ticket.betAmount;
-    userData.total_spent += ticket.betAmount;
-    ticket.players.push(interaction.user.id);
-    await pointsSystem.saveData();
-
-    // Update the ticket display
-    const playerList = await Promise.all(
-        ticket.players.map(async (id) => {
-            try {
-                const user = await client.users.fetch(id);
-                return user.displayName;
-            } catch {
-                return `User ${id}`;
-            }
-        })
-    );
-
-    const embed = new EmbedBuilder()
-        .setTitle("🎫 UNO Game Ticket - Updated!")
-        .setDescription(
-            `**🃏 UNO GAMING LOBBY 🃏**\n\`\`\`\n` +
-            `    🎫 TICKET: ${ticketId}\n` +
-            `  ╔═══════════════════╗\n` +
-            `  ║ 💎 Bet: ${ticket.betAmount} 💎/player ║\n` +
-            `  ║ 🤖 AI: ${ticket.aiMode.toUpperCase()}        ║\n` +
-            `  ║ 👥 Players: ${ticket.players.length}/${ticket.maxPlayers}    ║\n` +
-            `  ╚═══════════════════╝\n` +
-            `\`\`\`\n\n` +
-            `**Game Details:**\n` +
-            `🎫 **Ticket ID:** \`${ticketId}\`\n` +
-            `💎 **Bet Amount:** ${ticket.betAmount} 💎 per player\n` +
-            `🤖 **AI Mode:** ${ticket.aiMode.charAt(0).toUpperCase() + ticket.aiMode.slice(1)}\n` +
-            `👥 **Max Players:** ${ticket.maxPlayers}\n` +
-            `📝 **Description:** ${ticket.description}\n\n` +
-            `**Prize Distribution:**\n` +
-            `🥇 **1st Place:** ${Math.floor(ticket.betAmount * ticket.maxPlayers * 0.5)} 💎 (50%)\n` +
-            `🥈 **2nd Place:** ${Math.floor(ticket.betAmount * ticket.maxPlayers * 0.3)} 💎 (30%)\n` +
-            `🥉 **3rd Place:** ${Math.floor(ticket.betAmount * ticket.maxPlayers * 0.2)} 💎 (20%)\n\n` +
-            `**Current Players (${ticket.players.length}):** ${playerList.join(", ")}\n\n` +
-            `**Status:** ${ticket.players.length >= 2 ? "✅ Ready to start!" : "⏳ Waiting for more players..."}\n`,
-        )
-        .setColor(ticket.players.length >= 2 ? 0x00ff00 : 0xffaa00)
-        .setTimestamp();
-
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId(`uno_ticket_join_${ticketId}`)
-            .setLabel("🎮 Join Game")
-            .setStyle(ButtonStyle.Success)
-            .setEmoji("🃏")
-            .setDisabled(ticket.players.length >= ticket.maxPlayers),
-        new ButtonBuilder()
-            .setCustomId(`uno_ticket_addai_${ticketId}`)
-            .setLabel("🤖 Add AI Bot")
-            .setStyle(ButtonStyle.Secondary)
-            .setEmoji("🎯"),
-        new ButtonBuilder()
-            .setCustomId(`uno_ticket_start_${ticketId}`)
-            .setLabel("▶️ Start Game")
-            .setStyle(ButtonStyle.Primary)
-            .setEmoji("🚀")
-            .setDisabled(ticket.players.length < 2),
-        new ButtonBuilder()
-            .setCustomId(`uno_ticket_cancel_${ticketId}`)
-            .setLabel("❌ Cancel")
-            .setStyle(ButtonStyle.Danger),
-    );
-
-    await interaction.update({ embeds: [embed], components: [row] });
-
-    await interaction.followUp({
-        content: `🎮 ${interaction.user.displayName} joined the UNO game and paid ${ticket.betAmount} 💎!`,
-        ephemeral: false,
-    });
-}
-
-async function handleUnoTicketAddAI(interaction, ticketId) {
-    const ticket = unoTickets.get(ticketId);
-    if (!ticket) {
-        return await interaction.reply({
-            content: "❌ This ticket no longer exists!",
-            ephemeral: true,
-        });
-    }
-
-    if (ticket.creatorId !== interaction.user.id) {
-        return await interaction.reply({
-            content: "❌ Only the ticket creator can add AI bots!",
-            ephemeral: true,
-        });
-    }
-
-    if (ticket.aiMode === "none") {
-        return await interaction.reply({
-            content: "❌ This ticket is set to human-only mode!",
-            ephemeral: true,
-        });
-    }
-
-    if (ticket.players.length >= ticket.maxPlayers) {
-        return await interaction.reply({
-            content: "❌ This game is already full!",
-            ephemeral: true,
-        });
-    }
-
-    // Add AI player based on mode
-    let aiDifficulty;
-    if (ticket.aiMode === "mixed") {
-        const difficulties = ["easy", "medium", "hard", "expert"];
-        aiDifficulty = difficulties[Math.floor(Math.random() * difficulties.length)];
-    } else {
-        aiDifficulty = ticket.aiMode;
-    }
-
-    const availableAI = aiBotPlayers.filter(
-        (bot) => bot.difficulty === aiDifficulty && !ticket.players.includes(bot.id)
-    );
-
-    if (availableAI.length === 0) {
-        return await interaction.reply({
-            content: `❌ No ${aiDifficulty.toUpperCase()} AI bots available!`,
-            ephemeral: true,
-        });
-    }
-
-    const aiBot = availableAI[0];
-    ticket.players.push(aiBot.id);
-
-    await interaction.reply({
-        content: `🤖 ${aiBot.name} (${aiDifficulty.toUpperCase()}) joined the game!`,
-        ephemeral: false,
-    });
-}
-
-async function handleUnoTicketStart(interaction, ticketId) {
-    const ticket = unoTickets.get(ticketId);
-    if (!ticket) {
-        return await interaction.reply({
-            content: "❌ This ticket no longer exists!",
-            ephemeral: true,
-        });
-    }
-
-    if (ticket.creatorId !== interaction.user.id) {
-        return await interaction.reply({
-            content: "❌ Only the ticket creator can start the game!",
-            ephemeral: true,
-        });
-    }
-
-    if (ticket.players.length < 2) {
-        return await interaction.reply({
-            content: "❌ Need at least 2 players to start!",
-            ephemeral: true,
-        });
-    }
-
-    // Convert ticket to actual game
-    const game = new UnoGame(ticket.channelId, ticket.creatorId);
-    game.players = [...ticket.players];
-    game.setBetAmount(ticket.betAmount);
-    
-    // Set up AI players
-    for (const playerId of ticket.players) {
-        const aiBot = aiBotPlayers.find(bot => bot.id === playerId);
-        if (aiBot) {
-            game.aiPlayers.set(playerId, aiBot);
-        }
-    }
-
-    game.status = "active";
-    game.dealCards();
-    activeUnoGames.set(game.gameId, game);
-
-    // Remove ticket
-    ticket.status = "started";
-    unoTickets.delete(ticketId);
-
-    // Start the game
-    const currentPlayer = await client.users.fetch(game.getCurrentPlayer());
-    const topCard = game.discardPile[game.discardPile.length - 1];
-
-    const embed = new EmbedBuilder()
-        .setTitle("🃏 UNO Game Started!")
-        .setDescription(
-            `**🎮 GAME ACTIVE 🎮**\n\`\`\`\n` +
-            `    🃏 UNO IN PROGRESS 🃏\n` +
-            `  ╔═══════════════════════╗\n` +
-            `  ║ Players: ${game.players.length}           ║\n` +
-            `  ║ Bet: ${game.betAmount} 💎 each        ║\n` +
-            `  ║ Prize Pool: ${game.totalPrizePool} 💎     ║\n` +
-            `  ╚═══════════════════════╝\n` +
-            `\`\`\`\n\n` +
-            `**Current Player:** ${currentPlayer.displayName}\n` +
-            `**Top Card:** ${topCard.emoji}\n` +
-            `**Direction:** ${game.direction === 1 ? "➡️ Clockwise" : "⬅️ Counter-clockwise"}\n\n` +
-            `**Players:**\n` +
-            (await Promise.all(
-                game.players.map(async (id, index) => {
-                    if (game.aiPlayers.has(id)) {
-                        const aiData = game.aiPlayers.get(id);
-                        const indicator = index === game.currentPlayerIndex ? "👉" : "  ";
-                        return `${indicator} ${aiData.name} (AI): ${game.hands.get(id).length} cards`;
-                    } else {
-                        const user = await client.users.fetch(id);
-                        const cards = game.hands.get(id).length;
-                        const indicator = index === game.currentPlayerIndex ? "👉" : "  ";
-                        return `${indicator} ${user.displayName}: ${cards} cards`;
-                    }
-                })
-            )).join("\n") +
-            `\n\n**Prize Distribution:**\n` +
-            `🥇 1st: ${Math.floor(game.totalPrizePool * 0.5)} 💎\n` +
-            `🥈 2nd: ${Math.floor(game.totalPrizePool * 0.3)} 💎\n` +
-            `🥉 3rd: ${Math.floor(game.totalPrizePool * 0.2)} 💎\n\n` +
-            `⚠️ **Auto-cleanup in 10 seconds if no activity!**`,
-        )
-        .setColor(0x00ff00)
-        .setTimestamp();
-
-    const components = createUnoGameButtons(game.gameId);
-    await interaction.update({ embeds: [embed], components: [components] });
-
-    // Start auto-cleanup for the active game
-    game.startAutoCleanup(interaction.message);
-}
-
-async function handleUnoTicketCancel(interaction, ticketId) {
-    const ticket = unoTickets.get(ticketId);
-    if (!ticket) {
-        return await interaction.reply({
-            content: "❌ This ticket no longer exists!",
-            ephemeral: true,
-        });
-    }
-
-    if (ticket.creatorId !== interaction.user.id) {
-        return await interaction.reply({
-            content: "❌ Only the ticket creator can cancel the game!",
-            ephemeral: true,
-        });
-    }
-
-    // Refund all players
-    for (const playerId of ticket.players) {
-        const aiBot = aiBotPlayers.find(bot => bot.id === playerId);
-        if (!aiBot) { // Only refund human players
-            const userData = pointsSystem.getUserData(playerId);
-            userData.points += ticket.betAmount;
-            userData.total_spent -= ticket.betAmount;
-        }
-    }
-    await pointsSystem.saveData();
-
-    unoTickets.delete(ticketId);
-
-    const embed = new EmbedBuilder()
-        .setTitle("❌ UNO Ticket Cancelled")
-        .setDescription(`The UNO game ticket has been cancelled by the creator.\n\nAll ${ticket.betAmount} 💎 bets have been refunded to players.`)
-        .setColor(0xff0000);
-
-    await interaction.update({ embeds: [embed], components: [] });
-
-    // Auto-delete cancellation message
-    setTimeout(async () => {
-        try {
-            await interaction.message.delete();
-        } catch (error) {
-            console.log("Could not delete cancelled ticket message:", error.message);
-        }
-    }, 10000);
-}
-
-async function handleUnoAIModeSelect(interaction) {
-    const selectedMode = interaction.values[0];
-    
-    if (!global.tempUnoTickets) global.tempUnoTickets = new Map();
-    const tempData = global.tempUnoTickets.get(interaction.user.id) || {};
-    tempData.aiMode = selectedMode;
-    global.tempUnoTickets.set(interaction.user.id, tempData);
-
-    const modeNames = {
-        "none": "👥 Human Only",
-        "easy": "🎲 Easy AI", 
-        "medium": "🎯 Medium AI",
-        "hard": "🎮 Hard AI",
-        "expert": "🤖 Expert AI",
-        "mixed": "🎭 Mixed AI"
-    };
-
-    await interaction.reply({
-        content: `✅ AI Mode set to: ${modeNames[selectedMode]}!`,
-        ephemeral: true
-    });
-}
-
-async function handleUnoMaxPlayersSelect(interaction) {
-    const selectedPlayers = parseInt(interaction.values[0]);
-    
-    if (!global.tempUnoTickets) global.tempUnoTickets = new Map();
-    const tempData = global.tempUnoTickets.get(interaction.user.id) || {};
-    tempData.maxPlayers = selectedPlayers;
-    global.tempUnoTickets.set(interaction.user.id, tempData);
-
-    await interaction.reply({
-        content: `✅ Maximum players set to: ${selectedPlayers}!`,
-        ephemeral: true
-    });
-}
-
-async function handleUnoTicketSubmit(interaction) {
-    if (!global.tempUnoTickets) global.tempUnoTickets = new Map();
-    const tempData = global.tempUnoTickets.get(interaction.user.id);
-
-    if (!tempData || !tempData.betAmount || !tempData.aiMode || !tempData.maxPlayers) {
-        return await interaction.reply({
-            content: "❌ Please complete all selections: bet amount (modal), AI mode (dropdown), and max players (dropdown)!",
-            ephemeral: true
-        });
-    }
-
-    // Check if user has enough diamonds
-    const userData = pointsSystem.getUserData(interaction.user.id);
-    if (userData.points < tempData.betAmount) {
-        return await interaction.reply({
-            content: `❌ You need ${tempData.betAmount} 💎 but only have ${userData.points} 💎!`,
-            ephemeral: true,
-        });
-    }
-
-    // Create ticket
-    const ticketId = generateUnoTicketId();
-    const ticket = {
-        id: ticketId,
-        creatorId: interaction.user.id,
-        betAmount: tempData.betAmount,
-        aiMode: tempData.aiMode,
-        maxPlayers: tempData.maxPlayers,
-        description: "UNO Game Session",
-        players: [interaction.user.id],
-        status: "open",
-        createdAt: new Date().toISOString(),
-        channelId: interaction.channelId,
-    };
-
-    unoTickets.set(ticketId, ticket);
-
-    // Deduct bet from creator
-    userData.points -= tempData.betAmount;
-    userData.total_spent += tempData.betAmount;
-    await pointsSystem.saveData();
-
-    // Clear temp data
-    global.tempUnoTickets.delete(interaction.user.id);
-
-    const modeNames = {
-        "none": "Human Only",
-        "easy": "Easy AI", 
-        "medium": "Medium AI",
-        "hard": "Hard AI",
-        "expert": "Expert AI",
-        "mixed": "Mixed AI"
-    };
-
-    const embed = new EmbedBuilder()
-        .setTitle("🎫 UNO Game Ticket Created!")
-        .setDescription(
-            `**🃏 UNO GAMING LOBBY 🃏**\n\`\`\`\n` +
-            `    🎫 TICKET: ${ticketId}\n` +
-            `  ╔═══════════════════╗\n` +
-            `  ║ 💎 Bet: ${tempData.betAmount} 💎/player ║\n` +
-            `  ║ 🤖 AI: ${tempData.aiMode.toUpperCase()}        ║\n` +
-            `  ║ 👥 Players: 1/${tempData.maxPlayers}    ║\n` +
-            `  ╚═══════════════════╝\n` +
-            `\`\`\`\n\n` +
-            `**Game Details:**\n` +
-            `🎫 **Ticket ID:** \`${ticketId}\`\n` +
-            `👑 **Host:** ${interaction.user.displayName}\n` +
-            `💎 **Bet Amount:** ${tempData.betAmount} 💎 per player\n` +
-            `🤖 **AI Mode:** ${modeNames[tempData.aiMode]}\n` +
-            `👥 **Max Players:** ${tempData.maxPlayers}\n\n` +
-            `**Prize Distribution:**\n` +
-            `🥇 **1st Place:** ${Math.floor(tempData.betAmount * tempData.maxPlayers * 0.5)} 💎 (50%)\n` +
-            `🥈 **2nd Place:** ${Math.floor(tempData.betAmount * tempData.maxPlayers * 0.3)} 💎 (30%)\n` +
-            `🥉 **3rd Place:** ${Math.floor(tempData.betAmount * tempData.maxPlayers * 0.2)} 💎 (20%)\n\n` +
-            `**Current Players (1):** ${interaction.user.displayName} ✅\n\n` +
-            `**How to Join:**\n` +
-            `• Click "🎮 Join Game" to pay ${tempData.betAmount} 💎 and join\n` +
-            `• AI bots will be added based on selected mode\n` +
-            `• Game starts when enough players join\n\n` +
-            `⚠️ **Note:** Your ${tempData.betAmount} 💎 bet has been deducted!`,
-        )
-        .setColor(0x00ff00)
-        .setTimestamp();
-
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId(`uno_ticket_join_${ticketId}`)
-            .setLabel("🎮 Join Game")
-            .setStyle(ButtonStyle.Success)
-            .setEmoji("🃏"),
-        new ButtonBuilder()
-            .setCustomId(`uno_ticket_addai_${ticketId}`)
-            .setLabel("🤖 Add AI Bot")
-            .setStyle(ButtonStyle.Secondary)
-            .setEmoji("🎯"),
-        new ButtonBuilder()
-            .setCustomId(`uno_ticket_start_${ticketId}`)
-            .setLabel("▶️ Start Game")
-            .setStyle(ButtonStyle.Primary)
-            .setEmoji("🚀"),
-        new ButtonBuilder()
-            .setCustomId(`uno_ticket_cancel_${ticketId}`)
-            .setLabel("❌ Cancel")
-            .setStyle(ButtonStyle.Danger),
-    );
-
-    await interaction.update({ embeds: [embed], components: [row] });
-}
-
-
                 );
             }
         },
@@ -4595,7 +3673,7 @@ async function endCustomDiamondMining(message, eventId, ticket) {
     const finalEmbed = new EmbedBuilder()
         .setTitle(`💎 ${ticket.title} - MINING COMPLETED! ⛏️`)
         .setDescription(
-            `**💎 MINING RESULTS 💎**\n\`\`\`\n    ⛏️💎💎💎⛏️\n   ╱ ╲ ╱ ╲ ╱ ╲\n  ╱   ╲   ╲   ╲\n ╱_____╲___╲___╲\n    MINE CLOSED\n\`\`\`\n\n⏰ **Event Status:** ${endReason}\n🎫 **Event:** ${ticket.title}\n👥 **Total Miners:** ${miningData.participants.size}\n🏆 **Total Claims:** ${miningData.totalClaims}\n💎 **Total Pool:** ${miningData.totalDiamonds.toLocaleString()} 💎\n💎 **Diamonds Distributed:** ${diamondsDistributed.toLocaleString()} 💎\n💎 **Remaining:** ${miningData.remainingDiamonds.toLocaleString()} 💎\n🎯 **Ticket ID:** \`${ticket.id}\`${topMinersText}\n\n**Thanks for participating in this custom diamond mining event!**`,
+            `**💎 MINING RESULTS 💎**\n\`\`\`\n    ⛏️💎💎💎⛏️\n   ╱ ╲ ╱ ╲ ╱ ╲\n  ╱   ╲   r��   ╲\n ╱_____╲___╲___╲\n    MINE CLOSED\n\`\`\`\n\n⏰ **Event Status:** ${endReason}\n🎫 **Event:** ${ticket.title}\n👥 **Total Miners:** ${miningData.participants.size}\n🏆 **Total Claims:** ${miningData.totalClaims}\n💎 **Total Pool:** ${miningData.totalDiamonds.toLocaleString()} 💎\n💎 **Diamonds Distributed:** ${diamondsDistributed.toLocaleString()} 💎\n💎 **Remaining:** ${miningData.remainingDiamonds.toLocaleString()} 💎\n🎯 **Ticket ID:** \`${ticket.id}\`${topMinersText}\n\n**Thanks for participating in this custom diamond mining event!**`,
         )
         .setColor(0x808080)
         .setTimestamp();
@@ -4734,260 +3812,6 @@ async function showPointDropHistory(interaction) {
     }, 60 * 1000); // 1 minute
 }
 
-async function handleUnoPlay(interaction, gameId) {
-    const game = activeUnoGames.get(gameId);
-    if (!game) {
-        return await interaction.reply({
-            content: "❌ This game no longer exists!",
-            ephemeral: true,
-        });
-    }
-
-    if (game.getCurrentPlayer() !== interaction.user.id) {
-        return await interaction.reply({
-            content: "❌ It's not your turn!",
-            ephemeral: true,
-        });
-    }
-
-    const playerHand = game.hands.get(interaction.user.id);
-    const topCard = game.discardPile[game.discardPile.length - 1];
-    const playableCards = playerHand.filter((card) =>
-        game.canPlayCard(card, topCard),
-    );
-
-    if (playableCards.length === 0) {
-        return await interaction.reply({
-            content: "❌ You have no playable cards! Draw a card first.",
-            ephemeral: true,
-        });
-    }
-
-    // For simplicity, play the first playable card
-    const cardToPlay = playableCards[0];
-    const handIndex = playerHand.indexOf(cardToPlay);
-    playerHand.splice(handIndex, 1);
-    game.discardPile.push(cardToPlay);
-
-    // Reset auto-cleanup timer since there was activity
-    game.cancelAutoCleanup();
-
-    // Check for UNO
-    if (playerHand.length === 0) {
-        // Player wins!
-        game.finishPlayer(interaction.user.id);
-
-        let prizeText = "";
-        if (game.betAmount > 0) {
-            const prizes = game.calculatePrizeDistribution();
-            const userPrize = prizes[interaction.user.id] || 0;
-
-            if (userPrize > 0) {
-                const userData = pointsSystem.getUserData(interaction.user.id);
-                userData.points += userPrize;
-                userData.total_earned += userPrize;
-                await pointsSystem.saveData();
-
-                prizeText = `\n\n💎 **Prize Won:** ${userPrize} 💎\n🏆 **Prize Pool:** ${game.totalPrizePool} 💎`;
-            }
-        }
-
-        const topCard = game.discardPile[game.discardPile.length - 1];
-        const cardEmbed = topCard.image
-            ? {
-                  image: { url: topCard.image },
-              }
-            : null;
-
-        const embed = new EmbedBuilder()
-            .setTitle("🏆 UNO SHOWDOWN WINNER!")
-            .setDescription(
-                `**${interaction.user.displayName} wins the game!**\n\n` +
-                    `🎉 **CONGRATULATIONS!** 🎉\n` +
-                    `🃏 **Winning Card:** ${cardToPlay.emoji}${prizeText}\n\n` +
-                    `**Game Summary:**\n` +
-                    `• Players: ${game.players.length}\n` +
-                    `• Bet Amount: ${game.betAmount} 💎 per player\n` +
-                    `• Total Prize Pool: ${game.totalPrizePool} 💎\n` +
-                    `• Winner's Prize: ${Math.floor(game.totalPrizePool * 0.5)} 💎`,
-            )
-            .setColor(0xffd700)
-            .setTimestamp();
-
-        if (cardEmbed) {
-            embed.setImage(cardToPlay.image);
-        }
-
-        await interaction.update({ embeds: [embed], components: [] });
-
-        // Distribute remaining prizes if there are other finished players
-        if (game.finishedPlayers.length > 1) {
-            const allPrizes = game.calculatePrizeDistribution();
-            for (const [playerId, prize] of Object.entries(allPrizes)) {
-                if (playerId !== interaction.user.id && prize > 0) {
-                    const userData = pointsSystem.getUserData(playerId);
-                    userData.points += prize;
-                    userData.total_earned += prize;
-                }
-            }
-            await pointsSystem.saveData();
-        }
-
-        activeUnoGames.delete(gameId);
-        return;
-    }
-
-    game.nextTurn();
-    const nextPlayer = await client.users.fetch(game.getCurrentPlayer());
-
-    const embed = new EmbedBuilder()
-        .setTitle("🃏 UNO Showdown 3D")
-        .setDescription(
-            `**${interaction.user.displayName} played:** ${cardToPlay.emoji}\n\n` +
-                `**Current Player:** ${nextPlayer.displayName}\n` +
-                `**Top Card:** ${cardToPlay.emoji}\n` +
-                `**Direction:** ${game.direction === 1 ? "➡️ Clockwise" : "⬅️ Counter-clockwise"}\n\n` +
-                `**Players:**\n` +
-                (
-                    await Promise.all(
-                        game.players.map(async (id, index) => {
-                            const user = await client.users.fetch(id);
-                            const cards = game.hands.get(id).length;
-                            const indicator =
-                                index === game.currentPlayerIndex ? "👉" : "  ";
-                            return `${indicator} ${user.displayName}: ${cards} cards`;
-                        }),
-                    )
-                ).join("\n") +
-                `\n\n⚠️ **Auto-cleanup in 10 seconds if no activity!**`,
-        )
-        .setColor(0x00ff00)
-        .setTimestamp();
-
-    const components = createUnoGameButtons(game.gameId);
-    await interaction.update({ embeds: [embed], components: [components] });
-
-    // Restart auto-cleanup timer
-    game.startAutoCleanup(interaction.message);
-}
-
-async function handleUnoDraw(interaction, gameId) {
-    const game = activeUnoGames.get(gameId);
-    if (!game) {
-        return await interaction.reply({
-            content: "❌ This game no longer exists!",
-            ephemeral: true,
-        });
-    }
-
-    if (game.getCurrentPlayer() !== interaction.user.id) {
-        return await interaction.reply({
-            content: "❌ It's not your turn!",
-            ephemeral: true,
-        });
-    }
-
-    if (game.deck.length === 0) {
-        return await interaction.reply({
-            content: "❌ No more cards in deck!",
-            ephemeral: true,
-        });
-    }
-
-    const drawnCard = game.deck.pop();
-    game.hands.get(interaction.user.id).push(drawnCard);
-
-    // Reset auto-cleanup timer
-    game.cancelAutoCleanup();
-    game.nextTurn();
-
-    const nextPlayer = await client.users.fetch(game.getCurrentPlayer());
-    const topCard = game.discardPile[game.discardPile.length - 1];
-
-    const embed = new EmbedBuilder()
-        .setTitle("🃏 UNO Showdown 3D")
-        .setDescription(
-            `**${interaction.user.displayName} drew a card**\n\n` +
-                `**Current Player:** ${nextPlayer.displayName}\n` +
-                `**Top Card:** ${topCard.emoji}\n` +
-                `**Direction:** ${game.direction === 1 ? "➡️ Clockwise" : "⬅️ Counter-clockwise"}\n\n` +
-                `**Players:**\n` +
-                (
-                    await Promise.all(
-                        game.players.map(async (id, index) => {
-                            const user = await client.users.fetch(id);
-                            const cards = game.hands.get(id).length;
-                            const indicator =
-                                index === game.currentPlayerIndex ? "👉" : "  ";
-                            return `${indicator} ${user.displayName}: ${cards} cards`;
-                        }),
-                    )
-                ).join("\n") +
-                `\n\n⚠️ **Auto-cleanup in 10 seconds if no activity!**`,
-        )
-        .setColor(0x0099ff)
-        .setTimestamp();
-
-    const components = createUnoGameButtons(game.gameId);
-    await interaction.update({ embeds: [embed], components: [components] });
-
-    // Restart auto-cleanup timer
-    game.startAutoCleanup(interaction.message);
-}
-
-async function handleUnoCall(interaction, gameId) {
-    const game = activeUnoGames.get(gameId);
-    if (!game) {
-        return await interaction.reply({
-            content: "❌ This game no longer exists!",
-            ephemeral: true,
-        });
-    }
-
-    const playerHand = game.hands.get(interaction.user.id);
-    if (playerHand.length !== 1) {
-        return await interaction.reply({
-            content: "❌ You can only call UNO when you have exactly 1 card!",
-            ephemeral: true,
-        });
-    }
-
-    await interaction.reply({
-        content: `🗣️ **${interaction.user.displayName} called UNO!** (1 card remaining)`,
-        ephemeral: false,
-    });
-}
-
-async function handleUnoBetModal(interaction) {
-    const channelId = interaction.customId.replace("uno_bet_modal_", "");
-    const betAmount = parseInt(
-        interaction.fields.getTextInputValue("bet_amount"),
-    );
-
-    if (isNaN(betAmount) || betAmount < 10 || betAmount > 1000) {
-        return await interaction.reply({
-            content: "❌ Bet amount must be between 10 and 1000 diamonds!",
-            ephemeral: true,
-        });
-    }
-
-    // Check if user has enough diamonds
-    const userData = pointsSystem.getUserData(interaction.user.id);
-    if (userData.points < betAmount) {
-        return await interaction.reply({
-            content: `❌ You need ${betAmount} 💎 but only have ${userData.points} 💎!`,
-            ephemeral: true,
-        });
-    }
-
-    await interaction.reply({
-        content: `🎮 Creating UNO game with ${betAmount} 💎 bet per player...`,
-        ephemeral: true,
-    });
-
-    await startUnoGame(channelId, interaction.user.id, betAmount);
-}
-
 async function handleDiamondMining(interaction, eventId) {
     const miningData = activeMiningEvents.get(eventId);
     if (!miningData) {
@@ -5041,517 +3865,10 @@ async function sendPointDropTicketPanel() {
     }
 }
 
-async function handleSendSystemPanel(interaction) {
-    if (!hasAdminRole(interaction)) {
-        const embed = new EmbedBuilder()
-            .setTitle("❌ Access Denied")
-            .setDescription("You need the admin role to use this command.")
-            .setColor(0xff0000);
-        return await interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-
-    await sendSystemCommandsPanel();
-    await interaction.reply({
-        content: "✅ System commands panel sent!",
-        ephemeral: true,
-    });
-}
-
-async function handleSendUnoTicketPanel(interaction) {
-    if (!hasAdminRole(interaction)) {
-        const embed = new EmbedBuilder()
-            .setTitle("❌ Access Denied")
-            .setDescription("You need the admin role to use this command.")
-            .setColor(0xff0000);
-        return await interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-
-    const unoChannel = client.channels.cache.get("1387168027027574875");
-    if (unoChannel) {
-        const panelData = createUnoTicketPanel();
-        await unoChannel.send(panelData);
-        await interaction.reply({
-            content: "✅ UNO ticket panel sent to the gaming channel!",
-            ephemeral: true,
-        });
-    } else {
-        await interaction.reply({
-            content: "❌ UNO gaming channel not found!",
-            ephemeral: true,
-        });
-    }
-}
-
-async function handleCreateUnoTicket(interaction) {
-    // Check if in correct channel
-    if (interaction.channelId !== "1387168027027574875") {
-        const embed = new EmbedBuilder()
-            .setTitle("❌ Wrong Channel")
-            .setDescription("UNO tickets can only be created in the designated gaming channel!")
-            .setColor(0xff0000);
-        return await interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-
-    const embed = new EmbedBuilder()
-        .setTitle("🎫 Create UNO Game Ticket")
-        .setDescription(
-            `**Set up your UNO game with the options below:**\n\n` +
-            `💎 **Diamond Bet:** Use the text input to set bet amount (10-1000)\n` +
-            `🤖 **AI Mode:** Choose from dropdown (Human-only or AI difficulty)\n` +
-            `👥 **Max Players:** Select from dropdown (2-10 players)\n\n` +
-            `**Next Steps:**\n` +
-            `1. Fill out the diamond bet amount\n` +
-            `2. Select your preferred AI mode\n` +
-            `3. Choose maximum number of players\n` +
-            `4. Submit to create your game ticket!`
-        )
-        .setColor(0x9932cc);
-
-    const modal = new ModalBuilder()
-        .setCustomId("uno_ticket_modal_step1")
-        .setTitle("🎫 UNO Ticket - Diamond Bet");
-
-    const betInput = new TextInputBuilder()
-        .setCustomId("bet_amount")
-        .setLabel("Diamond Bet Amount (10-1000 per player)")
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder("Enter diamonds each player must bet...")
-        .setRequired(true)
-        .setMaxLength(4);
-
-    modal.addComponents(
-        new ActionRowBuilder().addComponents(betInput)
-    );
-
-    const aiModeSelect = new StringSelectMenuBuilder()
-        .setCustomId("uno_ai_mode_select")
-        .setPlaceholder("🤖 Choose AI Mode...")
-        .addOptions([
-            {
-                label: "👥 Human Only",
-                description: "No AI bots, human players only",
-                value: "none",
-                emoji: "👥"
-            },
-            {
-                label: "🎲 Easy AI",
-                description: "70% play rate, simple strategy",
-                value: "easy",
-                emoji: "🎲"
-            },
-            {
-                label: "🎯 Medium AI",
-                description: "85% play rate, prefers action cards",
-                value: "medium",
-                emoji: "🎯"
-            },
-            {
-                label: "🎮 Hard AI",
-                description: "90% play rate, strategic choices",
-                value: "hard",
-                emoji: "🎮"
-            },
-            {
-                label: "🤖 Expert AI",
-                description: "95% play rate, optimal strategy",
-                value: "expert",
-                emoji: "🤖"
-            },
-            {
-                label: "🎭 Mixed AI",
-                description: "Random AI difficulties",
-                value: "mixed",
-                emoji: "🎭"
-            }
-        ]);
-
-    const maxPlayersSelect = new StringSelectMenuBuilder()
-        .setCustomId("uno_max_players_select")
-        .setPlaceholder("👥 Choose Maximum Players...")
-        .addOptions([
-            { label: "2 Players", value: "2", emoji: "2️⃣" },
-            { label: "3 Players", value: "3", emoji: "3️⃣" },
-            { label: "4 Players", value: "4", emoji: "4️⃣" },
-            { label: "5 Players", value: "5", emoji: "5️⃣" },
-            { label: "6 Players", value: "6", emoji: "6️⃣" },
-            { label: "7 Players", value: "7", emoji: "7️⃣" },
-            { label: "8 Players", value: "8", emoji: "8️⃣" },
-            { label: "9 Players", value: "9", emoji: "9️⃣" },
-            { label: "10 Players", value: "10", emoji: "🔟" }
-        ]);
-
-    const submitButton = new ButtonBuilder()
-        .setCustomId("uno_ticket_submit")
-        .setLabel("🎫 Create Ticket")
-        .setStyle(ButtonStyle.Primary)
-        .setEmoji("🃏");
-
-    const components = [
-        new ActionRowBuilder().addComponents(aiModeSelect),
-        new ActionRowBuilder().addComponents(maxPlayersSelect),
-        new ActionRowBuilder().addComponents(submitButton)
-    ];
-
-    // Store temporary ticket data
-    const tempTicketData = {
-        creatorId: interaction.user.id,
-        betAmount: null,
-        aiMode: null,
-        maxPlayers: null,
-        timestamp: Date.now()
-    };
-
-    // Store in global temp storage (you might want to implement a proper temp storage)
-    if (!global.tempUnoTickets) global.tempUnoTickets = new Map();
-    global.tempUnoTickets.set(interaction.user.id, tempTicketData);
-
-    await interaction.reply({ embeds: [embed], components, ephemeral: true });
-    await interaction.followUp({ modal });
-}
-
-async function handleUnoTicketModal(interaction) {
-    if (interaction.customId === "uno_ticket_modal_step1") {
-        const betAmount = parseInt(interaction.fields.getTextInputValue("bet_amount"));
-
-        // Validation
-        if (isNaN(betAmount) || betAmount < 10 || betAmount > 1000) {
-            return await interaction.reply({
-                content: "❌ Bet amount must be between 10 and 1000 diamonds!",
-                ephemeral: true,
-            });
-        }
-
-        // Check if user has enough diamonds
-        const userData = pointsSystem.getUserData(interaction.user.id);
-        if (userData.points < betAmount) {
-            return await interaction.reply({
-                content: `❌ You need ${betAmount} 💎 but only have ${userData.points} 💎!`,
-                ephemeral: true,
-            });
-        }
-
-        // Update temp data
-        if (!global.tempUnoTickets) global.tempUnoTickets = new Map();
-        const tempData = global.tempUnoTickets.get(interaction.user.id) || {};
-        tempData.betAmount = betAmount;
-        global.tempUnoTickets.set(interaction.user.id, tempData);
-
-        await interaction.reply({
-            content: `✅ Bet amount set to ${betAmount} 💎! Now select AI mode and max players from the dropdowns above, then click "Create Ticket".`,
-            ephemeral: true
-        });
-    }
-}
-
-async function handleUnoRulesGuide(interaction) {
-    const embed = new EmbedBuilder()
-        .setTitle("📋 UNO Rules & Game Guide")
-        .setDescription("**Complete UNO Gaming Guide**")
-        .addFields(
-            {
-                name: "🎮 Basic Rules",
-                value: "• Match color or number to play\n• Draw cards if you can't play\n• Call UNO when you have 1 card left!\n• First to empty hand wins",
-                inline: true,
-            },
-            {
-                name: "🃏 Special Cards",
-                value: "🔄 **Reverse** - Change direction\n⏭️ **Skip** - Skip next player\n➕2️⃣ **Draw 2** - Next player draws 2\n🌈 **Wild** - Choose color\n🌈⚡ **Wild +4** - Choose color, +4 cards",
-                inline: true,
-            },
-            {
-                name: "💎 Betting System",
-                value: "• Set bet amount (10-1000 💎)\n• All players must pay to join\n• Prizes distributed to top 3\n• Winner gets 50% of prize pool",
-                inline: false,
-            },
-            {
-                name: "🤖 AI Modes",
-                value: "🎲 **EASY** - 70% play rate, basic strategy\n🎯 **MEDIUM** - 85% play rate, prefers action cards\n🎮 **HARD** - 90% play rate, strategic choices\n🤖 **EXPERT** - 95% play rate, optimal strategy\n🎭 **MIXED** - Random AI difficulties",
-                inline: false,
-            },
-            {
-                name: "🎫 Ticket System",
-                value: "• Create tickets to set up games\n• Choose bet amount and AI mode\n• Players join by paying bet\n• Host controls game start\n• Auto-cleanup if inactive",
-                inline: false,
-            },
-        )
-        .setColor(0x0099ff);
-
-    await interaction.reply({ embeds: [embed], ephemeral: true });
-}
-
-async function handleUnoActiveGames(interaction) {
-    const activeTickets = Array.from(unoTickets.values()).filter(ticket => ticket.status === "open");
-    const activeGames = Array.from(activeUnoGames.values());
-
-    const embed = new EmbedBuilder()
-        .setTitle("🎮 Active UNO Sessions")
-        .setColor(0x00ff00);
-
-    if (activeTickets.length === 0 && activeGames.length === 0) {
-        embed.setDescription("No active UNO tickets or games at the moment.\n\nCreate a new ticket to start playing!");
-    } else {
-        let description = "";
-        
-        if (activeTickets.length > 0) {
-            description += "**🎫 Open Tickets:**\n";
-            for (const ticket of activeTickets.slice(0, 5)) {
-                description += `• \`${ticket.id}\` - ${ticket.betAmount}💎 - ${ticket.players.length}/${ticket.maxPlayers} players\n`;
-            }
-            description += "\n";
-        }
-
-        if (activeGames.length > 0) {
-            description += "**🃏 Active Games:**\n";
-            for (const game of activeGames.slice(0, 5)) {
-                description += `• Game \`${game.gameId.substring(4, 12)}\` - ${game.players.length} players - ${game.betAmount}💎\n`;
-            }
-        }
-
-        embed.setDescription(description);
-    }
-
-    await interaction.reply({ embeds: [embed], ephemeral: true });
-}
-
-// Auto UNO System Setup
-async function setupAutoUnoSystem() {
-    console.log("🃏 Setting up automatic UNO system...");
-    
-    // Send UNO ticket panel to the designated channel
-    const unoChannel = client.channels.cache.get("1387168027027574875");
-    if (unoChannel) {
-        try {
-            // Clean any existing UNO panels first
-            const messages = await unoChannel.messages.fetch({ limit: 50 });
-            const botMessages = messages.filter(msg => 
-                msg.author.id === client.user.id && 
-                (msg.embeds.length > 0 && msg.embeds[0].title?.includes("UNO"))
-            );
-            
-            for (const msg of botMessages.values()) {
-                try {
-                    await msg.delete();
-                } catch (error) {
-                    console.log("Could not delete old UNO message:", error.message);
-                }
-            }
-            
-            // Send fresh UNO ticket panel
-            const panelData = createUnoTicketPanel();
-            await unoChannel.send(panelData);
-            console.log("✅ UNO system automatically activated and panel deployed!");
-            
-        } catch (error) {
-            console.error("❌ Error setting up automatic UNO system:", error);
-        }
-    } else {
-        console.log("❌ UNO channel not found for automatic setup");
-    }
-    
-    // Start automatic cleanup of user interactions every minute
-    setInterval(async () => {
-        await autoCleanupUserInteractions();
-    }, 60 * 1000); // Every 1 minute
-    
-    console.log("✅ Auto-cleanup system activated - user interactions will be cleaned every minute");
-}
-
-// Auto cleanup user interactions after 1 minute
-async function autoCleanupUserInteractions() {
-    const channels = [
-        CHANNELS.daily_claims,
-        CHANNELS.gambling,
-        CHANNELS.gift_cards,
-        CHANNELS.gift_card_verification,
-        CHANNELS.transfers,
-        CHANNELS.leaderboard,
-        CHANNELS.point_drops,
-        "1387168027027574875" // UNO channel
-    ];
-    
-    for (const channelId of channels) {
-        const channel = client.channels.cache.get(channelId);
-        if (channel) {
-            try {
-                const oneMinuteAgo = Date.now() - 60 * 1000;
-                const messages = await channel.messages.fetch({ limit: 50 });
-                
-                const messagesToDelete = messages.filter(msg => {
-                    const messageAge = Date.now() - msg.createdTimestamp;
-                    
-                    // Delete user interaction messages older than 1 minute
-                    if (msg.author.bot === false && messageAge > 60 * 1000) {
-                        const content = msg.content.toLowerCase();
-                        const hasEmbeds = msg.embeds.length > 0;
-                        const hasComponents = msg.components.length > 0;
-                        
-                        // Check for interaction patterns
-                        const interactionPatterns = [
-                            "/claim", "/gambling", "/transfer", "/generate",
-                            "/check", "/redeem", "/convert", "/uno",
-                            "💎", "diamonds", "claimed", "won", "lost",
-                            "🎲", "🪙", "🎰", "🎁", "🃏"
-                        ];
-                        
-                        const hasInteractionPattern = interactionPatterns.some(pattern =>
-                            content.includes(pattern)
-                        );
-                        
-                        // Delete if it looks like a bot interaction response
-                        if (hasInteractionPattern || hasEmbeds || hasComponents) {
-                            return true;
-                        }
-                    }
-                    
-                    return false;
-                });
-                
-                // Delete old interaction messages
-                for (const msg of messagesToDelete.values()) {
-                    try {
-                        await msg.delete();
-                        await new Promise(resolve => setTimeout(resolve, 100)); // Small delay
-                    } catch (error) {
-                        // Ignore delete errors
-                    }
-                }
-                
-                if (messagesToDelete.size > 0) {
-                    console.log(`🧹 Auto-cleaned ${messagesToDelete.size} user interaction messages from ${channel.name || channelId}`);
-                }
-                
-            } catch (error) {
-                // Ignore fetch/delete errors
-            }
-        }
-    }
-}
-
-async function sendSystemCommandsPanel() {
-    const systemChannel =
-        client.channels.cache.get(CHANNELS.system_commands) ||
-        client.channels.cache.get(CHANNELS.information);
-
-    if (systemChannel) {
-        const embed = new EmbedBuilder()
-            .setTitle("🎛️ Complete System Commands Reference")
-            .setDescription(
-                `**🤖 PCRP Diamond Points Bot - Full Command Database**\n\`\`\`\n` +
-                    `     🎛️ SYSTEM PANEL 🎛️\n` +
-                    `  ╔══════════════════════════╗\n` +
-                    `  ║ 📖 ALL COMMANDS         ║\n` +
-                    `  ║ 🎮 UNO AI SYSTEM        ║\n` +
-                    `  ║ 💎 DIAMOND ECONOMY      ║\n` +
-                    `  ║ 🛡️ ADMIN CONTROLS       ║\n` +
-                    `  ╚══════════════════════════╝\n` +
-                    `\`\`\`\n\n` +
-                    `**🎯 Quick Navigation:**\n` +
-                    `📍 **Channels:** <#${CHANNELS.daily_claims}> | <#${CHANNELS.gambling}> | <#${CHANNELS.gift_cards}>\n` +
-                    `📍 **Systems:** <#${CHANNELS.point_drops}> | <#${CHANNELS.leaderboard}> | <#${CHANNELS.transfers}>\n\n` +
-                    `**📋 Complete Commands List Below:**`,
-            )
-            .setColor(0x9932cc)
-            .setTimestamp();
-
-        // User Commands Section
-        embed.addFields(
-            {
-                name: "💎 **Daily & Points Commands**",
-                value:
-                    `\`/claim_daily\` - Claim daily diamonds with streak bonus\n` +
-                    `\`/get_points [user]\` - Check your or another user's balance\n` +
-                    `\`/transfer_points <user> <amount>\` - Send diamonds to others\n` +
-                    `📍 **Location:** <#${CHANNELS.daily_claims}> | <#${CHANNELS.transfers}>`,
-                inline: false,
-            },
-            {
-                name: "🎲 **Gaming & Casino Commands**",
-                value:
-                    `\`/gambling_menu\` - Access 3D casino games menu\n` +
-                    `• **🎲 Dice Game** - Guess 1-6 (5x multiplier, min 10💎)\n` +
-                    `• **🪙 Coinflip** - Pick heads/tails (2x multiplier, min 10💎)\n` +
-                    `• **🎰 Slots** - Auto-spin reels (12x max, fixed 30💎)\n` +
-                    `📍 **Location:** <#${CHANNELS.gambling}>`,
-                inline: false,
-            },
-            {
-                name: "🃏 **UNO Showdown 3D Commands**",
-                value:
-                    `\`/uno [channel]\` - Start UNO game with diamond betting\n` +
-                    `🤖 **AI Features:** 4 difficulty levels (Easy/Medium/Hard/Expert)\n` +
-                    `💎 **Betting System:** 10-1000 diamonds per player\n` +
-                    `🏆 **Prize Distribution:** 50%/30%/20% for top 3 players\n` +
-                    `📍 **Location:** Channel ID 1387168027027574875 only`,
-                inline: false,
-            },
-            {
-                name: "🎁 **Gift Card System Commands**",
-                value:
-                    `\`/generate_gift_card <amount>\` - Create gift cards (500-100k💎)\n` +
-                    `\`/check_gift_card <code>\` - Verify gift card status\n` +
-                    `\`/redeem_gift_card\` - Legacy PCRP system conversion\n` +
-                    `\`/convert_points\` - Same as redeem_gift_card\n` +
-                    `📍 **Location:** <#${CHANNELS.gift_cards}> | <#${CHANNELS.gift_card_verification}>`,
-                inline: false,
-            },
-            {
-                name: "🏆 **Information & Leaderboard Commands**",
-                value:
-                    `\`/leaderboard\` - View top 10 diamond holders\n` +
-                    `\`/info\` - Show comprehensive bot information\n` +
-                    `\`/test_dm\` - Test bot's DM capability for rewards\n` +
-                    `📍 **Location:** <#${CHANNELS.leaderboard}> | <#${CHANNELS.information}>`,
-                inline: false,
-            },
-            {
-                name: "🎯 **Point Drop System Commands**",
-                value:
-                    `**User Commands (Restricted Access):**\n` +
-                    `• Create Point Drop Tickets (100-10k💎, 1-60min duration)\n` +
-                    `• View ticket guidelines and history\n` +
-                    `**Admin Commands:**\n` +
-                    `\`/approve_point_drop <ticket_id>\` - Approve tickets\n` +
-                    `\`/reject_point_drop <ticket_id>\` - Reject tickets\n` +
-                    `📍 **Location:** <#${CHANNELS.point_drops}>`,
-                inline: false,
-            },
-        );
-
-        // Admin Commands Section
-        embed.addFields(
-            {
-                name: "🛡️ **Admin Panel Management Commands**",
-                value:
-                    `\`/send_daily_claim\` - Deploy daily claim panel\n` +
-                    `\`/send_gift_card_panel\` - Deploy gift card panel\n` +
-                    `\`/send_info_panel\` - Deploy information panel\n` +
-                    `\`/send_point_drop_panel\` - Deploy point drop panel\n` +
-                    `\`/send_system_panel\` - Deploy this system panel`,
-                inline: false,
-            },
-            {
-                name: "🧹 **System Maintenance Commands**",
-                value:
-                    `\`/cleanup_old_messages\` - Clean all old messages/interactions\n` +
-                    `• Removes expired gift cards from database\n` +
-                    `• Cleans old point drop tickets (7+ days)\n` +
-                    `• Bulk deletes bot messages and user interactions\n` +
-                    `• Enhanced cleanup for fresh channel state`,
-                inline: false,
-            },
-        );
-
-        
-
-        await systemChannel.send({ embeds: [embed] });
-        console.log("✅ System commands panel sent");
-    }
-}
-
 // Startup functions
 async function sendStartupPanels() {
     console.log("🚀 Bot startup sequence initiated...");
-    console.log("🧹 Phase 1: Complete channel cleanup");
+    console.log("🧹 Phase 1: Complete channel cleanup (bot restart only)");
     await cleanupOldPanels();
 
     console.log("📋 Phase 2: Deploying fresh panels");
@@ -5562,7 +3879,6 @@ async function sendStartupPanels() {
     await sendInfoPanel();
     await sendAdminGiftCardPanel();
     await sendPointDropTicketPanel();
-    await sendSystemCommandsPanel();
 
     console.log(
         "✅ Bot startup sequence completed - All systems fresh and operational!",
@@ -5670,9 +3986,9 @@ async function sendInfoPanel() {
     const infoChannel = client.channels.cache.get(CHANNELS.information);
     if (infoChannel) {
         const embed = new EmbedBuilder()
-            .setTitle("ℹ️ Diamond Points Bot Information")
+            .setTitle("ℹ️ Diamond Points Bot Information Center")
             .setDescription(
-                `**Welcome to the Diamond Bot!**\n\`\`\`\n    ℹ️ HELP CENTER ℹ️\n  ╔═══════════════════╗\n  ║ 💎 DIAMOND SYSTEM ║\n  ║ 🎮 GAMES & REWARDS ║\n  ╚═══════════════════╝\n\`\`\`\n\n**How to Start:**\n💎 **Daily Claims:** Use \`/claim_daily\` to earn diamonds\n🎲 **Casino Games:** Try your luck with dice, coinflip, and slots\n🎁 **Gift Cards:** Convert diamonds to rewards\n🏆 **Leaderboard:** Compete with other players\n\n**Basic Commands:**\n• \`/claim_daily\` - Get daily diamonds\n• \`/gambling_menu\` - Play casino games\n• \`/leaderboard\` - View rankings\n• \`/get_points\` - Check your balance\n\nClick the buttons below for more command details!`,
+                `**Welcome to the Complete Bot Guide!**\n\`\`\`\n    ℹ️ HELP CENTER ℹ️\n  ╔═══════════════════╗\n  ║ 📖 USER COMMANDS  ║\n  ║ 🛡️ ADMIN COMMANDS ║\n  ║ 💎 BOT FEATURES   ║\n  ╚═══════════════════╝\n\`\`\`\n\n**Quick Start Guide:**\n💎 **New Users:** Start with \`/claim_daily\` in <#${CHANNELS.daily_claims}>\n🎲 **Gaming:** Visit <#${CHANNELS.gambling}> for casino games\n🎁 **Rewards:** Use <#${CHANNELS.gift_cards}> to redeem prizes\n🏆 **Rankings:** Check <#${CHANNELS.leaderboard}> for top players\n\n**Bot Economy:**\n• Base Daily Reward: 50 💎\n• Streak Multiplier: Up to 3x\n• Gift Card Range: 500-100,000 💎\n• Conversion Rate: 100 💎 = 1 Rupee\n\n**Commands Available:**\n• \`/info\` - Show this panel\n• Use buttons below for detailed command lists\n\nClick a button below to view command details!`,
             )
             .setColor(0x00bfff);
 
@@ -5690,7 +4006,7 @@ async function sendAdminGiftCardPanel() {
         const embed = new EmbedBuilder()
             .setTitle("🛡️ Admin Gift Card Generation Panel")
             .setDescription(
-                `**Admin-Only Gift Card System**\n\`\`\`\n  🛡️ ADMIN PANEL 🛡️\n╔══════════════════════╗\n║ 💎 Generate Cards    ║\n║ 🔒 Admin Access Only ║\n║ 📧 DM Delivery       ║\n╚══════════════════════╝\n\`\`\`\n\n**Features:**\n💎 **Generate Gift Cards** - Create cards with custom amounts\n📧 **Auto DM Delivery** - Codes sent directly to your DMs\n🔒 **Admin Only Access** - Restricted to authorized users\n⏰ **7-Day Validity** - All cards expire after 7 days\n\n**Usage:**\n1. Click the "Generate Gift Card" button below\n2. Enter diamond amount (500-100,000)\n3. Card will be generated and sent to your DMs\n4. Share the code or use it yourself\n\n**Access Requirements:**\n• Admin role: <@&${ADMIN_ROLE_ID}>\n\nOnly authorized admins can use this panel!`,
+                `**Admin-Only Gift Card System**\n\`\`\`\n  🛡️ ADMIN PANEL 🛡️\n╔══════════════════════╗\n║ 💎 Generate Cards    ║\n║ 🔒 Admin Access Only ║\n║ 📧 DM Delivery       ║\n╚══════════════════════╝\n\`\`\`\n\n**Features:**\n💎 **Generate Gift Cards** - Create cards with custom amounts\n📧 **Auto DM Delivery** - Codes sent directly to your DMs\n🔒 **Admin Only Access** - Restricted to authorized users\n⏰ **7-Day Validity** - All cards expire after 7 days\n\n**Usage:**\n1. Click the "Generate Gift Card" button below\n2. Enter diamond amount (500-100,000)\n3. Card will be generated and sent to your DMs\n4. Share the code or use it yourself\n\n**Access Requirements:**\n• Admin roles: Multiple admin roles configured\n\nOnly authorized admins can use this panel!`,
             )
             .setColor(0xff0000);
 
@@ -5710,6 +4026,10 @@ async function sendAdminGiftCardPanel() {
 async function cleanupOldPanels() {
     // Function to cleanup ALL bot messages AND user interaction messages from ALL channels for fresh start
     console.log("🧹 Starting comprehensive channel cleanup...");
+
+    // FIRST: Complete cleanup of admin reports channel (1387168027027574875)
+    console.log("🧹 Phase 1a: Complete admin reports channel cleanup...");
+    await performCompleteAdminChannelCleanup();
 
     // Clean up expired gift cards and user data first
     console.log("🧹 Cleaning up expired gift cards and old data...");
@@ -5767,7 +4087,6 @@ async function performEnhancedChannelCleanup() {
         CHANNELS.information,
         CHANNELS.gift_card_verification,
         CHANNELS.point_drops,
-        CHANNELS.system_commands,
     ];
 
     for (const channelId of channels) {
@@ -5781,7 +4100,7 @@ async function performEnhancedChannelCleanup() {
                 let totalCleanedMessages = 0;
                 let lastMessageId = null;
 
-                // Enhanced cleanup - fetch ALL messages, not just recent ones
+                // AGGRESSIVE cleanup - fetch ALL messages for complete cleaning
                 while (true) {
                     const fetchOptions = { limit: 100 };
                     if (lastMessageId) {
@@ -5792,28 +4111,38 @@ async function performEnhancedChannelCleanup() {
 
                     if (fetched.size === 0) break;
 
-                    // Filter messages to delete: bot messages + user interaction responses + old casino results
+                    // ENHANCED Filter: More aggressive cleanup of bot messages and user interactions
                     const messagesToDelete = fetched.filter((msg) => {
                         const messageAge = Date.now() - msg.createdTimestamp;
-                        const isOld = messageAge > 14 * 24 * 60 * 60 * 1000; // Older than 14 days
+                        const isOld = messageAge > 7 * 24 * 60 * 60 * 1000; // Reduced to 7 days
 
-                        // Always delete bot messages
-                        if (msg.author.id === client.user.id) {
+                        // ALWAYS delete ALL bot messages (more aggressive)
+                        if (msg.author.bot) {
                             return true;
                         }
 
-                        // Delete user messages that contain bot interaction patterns
+                        // AGGRESSIVE user message cleanup
                         if (msg.author.bot === false) {
                             const content = msg.content.toLowerCase();
                             const hasEmbeds = msg.embeds.length > 0;
                             const hasComponents = msg.components.length > 0;
+                            const hasReactions = msg.reactions.cache.size > 0;
 
-                            // Check for bot interaction indicators
+                            // EXPANDED bot interaction patterns including gift card support tickets
                             const botPatterns = [
                                 "💎",
                                 "diamonds",
                                 "claimed",
                                 "gift card",
+                                "support ticket",
+                                "gift card support",
+                                "ticket",
+                                "support",
+                                "🎫",
+                                "🎁",
+                                "how to get",
+                                "admin approval",
+                                "contact admin",
                                 "casino",
                                 "mining",
                                 "leaderboard",
@@ -5829,23 +4158,61 @@ async function performEnhancedChannelCleanup() {
                                 "🎲",
                                 "🪙",
                                 "🎰",
-                                "🎁",
                                 "🏆",
                                 "⛏️",
                                 "🔥",
+                                "admin",
+                                "login",
+                                "logout",
+                                "session",
+                                "tracking",
+                                "report",
+                                "/claim",
+                                "/gambling",
+                                "/transfer",
+                                "/generate",
+                                "/convert",
+                                "/redeem",
+                                "approved",
+                                "rejected",
+                                "mining",
+                                "drop",
+                                "status",
+                                "bot",
+                                "command",
+                                "error",
+                                "successful",
+                                "dm delivery",
+                                "code sent",
+                                "gift card code",
                             ];
 
                             const hasBotPattern = botPatterns.some((pattern) =>
                                 content.includes(pattern),
                             );
 
-                            // Delete if has bot patterns, embeds, components, or is old user interaction
+                            // AGGRESSIVE deletion criteria
                             if (
                                 hasBotPattern ||
                                 hasEmbeds ||
                                 hasComponents ||
+                                hasReactions ||
                                 isOld
                             ) {
+                                return true;
+                            }
+
+                            // Delete messages that look like command responses or ticket interactions
+                            if (
+                                content.startsWith("/") ||
+                                content.includes("✅") ||
+                                content.includes("❌") ||
+                                content.includes("⚠️") ||
+                                content.includes("🎫") ||
+                                content.includes("🎁") ||
+                                content.length < 5
+                            ) {
+                                // Very short messages likely spam
                                 return true;
                             }
                         }
@@ -5938,9 +4305,674 @@ async function performEnhancedChannelCleanup() {
     );
 }
 
+// Admin Tracking System Functions
+function createAdminTrackingButtons() {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId("admin_login")
+            .setLabel("🟢 Login")
+            .setStyle(ButtonStyle.Success)
+            .setEmoji("🔐"),
+        new ButtonBuilder()
+            .setCustomId("admin_logout")
+            .setLabel("🔴 Logout")
+            .setStyle(ButtonStyle.Danger)
+            .setEmoji("🔓"),
+        new ButtonBuilder()
+            .setCustomId("admin_status")
+            .setLabel("📊 My Status")
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji("📈"),
+    );
+}
+
+async function handleAdminLogin(interaction) {
+    if (!hasAdminRole(interaction)) {
+        const embed = new EmbedBuilder()
+            .setTitle("❌ Access Denied")
+            .setDescription("You need admin privileges to use this system.")
+            .setColor(0xff0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    pointsSystem.startAdminSession(interaction.user.id);
+    await pointsSystem.saveData();
+
+    const embed = new EmbedBuilder()
+        .setTitle("🟢 Admin Login Successful")
+        .setDescription(
+            `**Welcome back, ${interaction.user.displayName}!**\n\n🔐 **Session Started:** <t:${Math.floor(Date.now() / 1000)}:F>\n📊 **Status:** Active\n⏱️ **Tracking:** Enabled\n\n✅ Your admin session is now being tracked. Use the Logout button when you're done.`,
+        )
+        .setColor(0x00ff00)
+        .setTimestamp();
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function handleAdminLogout(interaction) {
+    if (!hasAdminRole(interaction)) {
+        const embed = new EmbedBuilder()
+            .setTitle("❌ Access Denied")
+            .setDescription("You need admin privileges to use this system.")
+            .setColor(0xff0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    const sessionData = pointsSystem.endAdminSession(interaction.user.id);
+    await pointsSystem.saveData();
+
+    if (!sessionData) {
+        const embed = new EmbedBuilder()
+            .setTitle("⚠️ No Active Session")
+            .setDescription("You don't have an active login session to end.")
+            .setColor(0xffaa00);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    const hours = Math.floor(sessionData.duration / 60);
+    const minutes = sessionData.duration % 60;
+    const timeString = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+
+    const embed = new EmbedBuilder()
+        .setTitle("🔴 Admin Logout Successful")
+        .setDescription(
+            `**Goodbye, ${interaction.user.displayName}!**\n\n🔓 **Session Ended:** <t:${Math.floor(Date.now() / 1000)}:F>\n⏱️ **Session Duration:** ${timeString}\n📊 **Status:** Offline\n\n✅ Your session has been recorded. Thank you for your service!`,
+        )
+        .setColor(0xff0000)
+        .setTimestamp();
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function handleAdminStatus(interaction) {
+    if (!hasAdminRole(interaction)) {
+        const embed = new EmbedBuilder()
+            .setTitle("❌ Access Denied")
+            .setDescription("You need admin privileges to use this system.")
+            .setColor(0xff0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    const adminData = pointsSystem.getAdminData(interaction.user.id);
+    const totalHours = Math.floor(adminData.totalHours);
+    const totalMinutes = Math.floor((adminData.totalHours - totalHours) * 60);
+    const totalSessions = adminData.sessions.length;
+
+    let statusText = "📴 Offline";
+    let currentSessionText = "No active session";
+
+    if (adminData.currentSession && adminData.currentSession.isActive) {
+        statusText = "🟢 Online";
+        const loginTime = new Date(adminData.currentSession.loginTime);
+        const currentDuration = Math.floor(
+            (Date.now() - loginTime) / 1000 / 60,
+        );
+        const currentHours = Math.floor(currentDuration / 60);
+        const currentMins = currentDuration % 60;
+        currentSessionText =
+            currentHours > 0
+                ? `${currentHours}h ${currentMins}m`
+                : `${currentMins}m`;
+    }
+
+    const embed = new EmbedBuilder()
+        .setTitle("📊 Your Admin Statistics")
+        .setDescription(`**${interaction.user.displayName}'s Activity Report**`)
+        .addFields(
+            { name: "📊 Current Status", value: statusText, inline: true },
+            {
+                name: "⏱️ Current Session",
+                value: currentSessionText,
+                inline: true,
+            },
+            {
+                name: "📈 Total Hours",
+                value: `${totalHours}h ${totalMinutes}m`,
+                inline: true,
+            },
+            {
+                name: "🔢 Total Sessions",
+                value: `${totalSessions} sessions`,
+                inline: true,
+            },
+            { name: "📅 Data Range", value: "Last 30 days", inline: true },
+            {
+                name: "⏰ Last Activity",
+                value: adminData.lastActivity
+                    ? `<t:${Math.floor(new Date(adminData.lastActivity).getTime() / 1000)}:R>`
+                    : "Never",
+                inline: true,
+            },
+        )
+        .setColor(0x0099ff)
+        .setTimestamp();
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function handleSendAdminTrackingPanel(interaction) {
+    if (!hasAdminRole(interaction)) {
+        const embed = new EmbedBuilder()
+            .setTitle("❌ Access Denied")
+            .setDescription("You need admin privileges to use this command.")
+            .setColor(0xff0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    await sendAdminTrackingPanel();
+    await interaction.reply({
+        content: "✅ Admin tracking panel sent!",
+        ephemeral: true,
+    });
+}
+
+async function handleAdminReport(interaction) {
+    if (!hasAdminRole(interaction)) {
+        const embed = new EmbedBuilder()
+            .setTitle("❌ Access Denied")
+            .setDescription("You need admin privileges to use this command.")
+            .setColor(0xff0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    await interaction.reply({
+        content: "📊 Generating admin activity report...",
+        ephemeral: true,
+    });
+    await generateMonthlyAdminReport();
+    await interaction.followUp({
+        content: "✅ Admin report generated and sent to reports channel!",
+        ephemeral: true,
+    });
+}
+
+async function handleCleanFullChannel(interaction) {
+    if (!hasAdminRole(interaction)) {
+        const embed = new EmbedBuilder()
+            .setTitle("❌ Access Denied")
+            .setDescription("You need admin privileges to use this command.")
+            .setColor(0xff0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    const channelId = interaction.options.getString("channel_id");
+    
+    await interaction.reply({
+        content: `🧹 Starting COMPLETE cleanup of channel ${channelId}...`,
+        ephemeral: true,
+    });
+
+    try {
+        await performCompleteChannelCleanup(channelId);
+        
+        const embed = new EmbedBuilder()
+            .setTitle("🧹 Complete Channel Cleanup Finished!")
+            .setDescription(
+                `**Channel ID:** \`${channelId}\`\n\n✅ **Complete cleanup performed:**\n• All bot messages removed\n• All user messages removed\n• All interactions cleared\n• Channel is now completely fresh\n\n🔄 **Operation completed successfully!**`,
+            )
+            .setColor(0x00ff00)
+            .setTimestamp();
+
+        await interaction.followUp({ embeds: [embed], ephemeral: true });
+        
+        console.log(`🧹 Manual complete cleanup of channel ${channelId} completed by admin:`, interaction.user.tag);
+        
+    } catch (error) {
+        console.error(`Error during complete cleanup of channel ${channelId}:`, error);
+        
+        const errorEmbed = new EmbedBuilder()
+            .setTitle("❌ Cleanup Error")
+            .setDescription(
+                `Failed to complete cleanup of channel \`${channelId}\`.\n\nError: ${error.message}`,
+            )
+            .setColor(0xff0000);
+            
+        await interaction.followUp({ embeds: [errorEmbed], ephemeral: true });
+    }
+}
+
+async function sendAdminTrackingPanel() {
+    const adminChannel = client.channels.cache.get(CHANNELS.admin_reports);
+    if (adminChannel) {
+        const embed = new EmbedBuilder()
+            .setTitle("🧑‍💼 Admin Login Tracking System")
+            .setDescription(
+                `**Professional Time Tracking for Admins**\n\`\`\`\n  🎫 ADMIN TRACKING 🎫\n╔══════════════════════════╗\n║ 🟢 Login  🔴 Logout     ║\n║ 📊 Status Monitoring    ║\n║ 📈 30-Day Reports       ║\n╚══════════════════════════╝\n\`\`\`\n\n**🔘 System Features:**\n🟢 **Login** - Start your admin session tracking\n🔴 **Logout** - End session and calculate duration\n📊 **My Status** - View your statistics and current session\n\n**🧑‍💼 Admin Features:**\n• **Session Monitoring** - Automatic login/logout tracking\n• **Online Status Detection** - Monitors Discord activity\n• **30-Day Data Storage** - Comprehensive session history\n• **Monthly Reports** - Top 5 admins by total hours\n\n**📊 Automated Reporting:**\n• Reports generated monthly on the 1st\n• Sent automatically to this channel\n• Includes detailed statistics and rankings\n• Data refreshes every 30 days\n\n**⚙️ Auto-Management:**\n• Sessions auto-end if offline >5 minutes\n• Data auto-saves every 5 minutes\n• Old data cleaned automatically\n\n**Admin Access Only** - Must have admin role to use`,
+            )
+            .setColor(0x0099ff)
+            .setTimestamp();
+
+        const components = createAdminTrackingButtons();
+        await adminChannel.send({ embeds: [embed], components: [components] });
+        console.log("✅ Admin tracking panel sent");
+    }
+}
+
+async function generateMonthlyAdminReport() {
+    try {
+        const adminChannel = client.channels.cache.get(CHANNELS.admin_reports);
+        if (!adminChannel) return;
+
+        // Get all admin data and sort by total hours
+        const adminStats = [];
+        for (const [userId, data] of Object.entries(
+            pointsSystem.data.admin_tracking,
+        )) {
+            if (data.totalHours > 0 || data.sessions.length > 0) {
+                try {
+                    const user = await client.users.fetch(userId);
+                    adminStats.push({
+                        user,
+                        totalHours: data.totalHours,
+                        sessions: data.sessions.length,
+                        lastActivity: data.lastActivity,
+                    });
+                } catch (error) {
+                    console.log(`Could not fetch user ${userId} for report`);
+                }
+            }
+        }
+
+        // Sort by total hours (descending)
+        adminStats.sort((a, b) => b.totalHours - a.totalHours);
+        const top5 = adminStats.slice(0, 5);
+
+        const embed = new EmbedBuilder()
+            .setTitle("📊 Monthly Admin Activity Report")
+            .setDescription(
+                `**🏆 Top 5 Admins by Total Hours**\n\n📅 **Report Period:** Last 30 Days\n📊 **Total Tracked Admins:** ${adminStats.length}\n⏰ **Generated:** <t:${Math.floor(Date.now() / 1000)}:F>`,
+            )
+            .setColor(0xffd700)
+            .setTimestamp();
+
+        if (top5.length === 0) {
+            embed.addFields({
+                name: "📝 No Data Available",
+                value: "No admin activity recorded in the last 30 days.",
+                inline: false,
+            });
+        } else {
+            const medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"];
+
+            for (let i = 0; i < top5.length; i++) {
+                const admin = top5[i];
+                const hours = Math.floor(admin.totalHours);
+                const minutes = Math.floor((admin.totalHours - hours) * 60);
+                const timeText =
+                    hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+
+                embed.addFields({
+                    name: `${medals[i]} ${admin.user.displayName}`,
+                    value: `⏱️ **Time:** ${timeText}\n📊 **Sessions:** ${admin.sessions}\n⏰ **Last Active:** ${admin.lastActivity ? `<t:${Math.floor(new Date(admin.lastActivity).getTime() / 1000)}:R>` : "Never"}`,
+                    inline: true,
+                });
+            }
+        }
+
+        // Calculate total statistics
+        const totalHours = adminStats.reduce(
+            (sum, admin) => sum + admin.totalHours,
+            0,
+        );
+        const totalSessions = adminStats.reduce(
+            (sum, admin) => sum + admin.sessions,
+            0,
+        );
+
+        embed.addFields(
+            {
+                name: "📈 Total Hours",
+                value: `${Math.floor(totalHours)}h ${Math.floor((totalHours - Math.floor(totalHours)) * 60)}m`,
+                inline: true,
+            },
+            {
+                name: "🔢 Total Sessions",
+                value: `${totalSessions}`,
+                inline: true,
+            },
+            {
+                name: "📊 Average per Admin",
+                value:
+                    adminStats.length > 0
+                        ? `${Math.floor(totalHours / adminStats.length)}h`
+                        : "0h",
+                inline: true,
+            },
+        );
+
+        await adminChannel.send({ embeds: [embed] });
+        console.log("📊 Monthly admin report generated and sent");
+    } catch (error) {
+        console.error("Error generating monthly admin report:", error);
+    }
+}
+
+async function performCompleteAdminChannelCleanup() {
+    // Complete cleanup of admin reports channel - removes ALL messages (bot and user)
+    try {
+        const adminChannelId = "1387168027027574875"; // Hardcoded as requested
+        const adminChannel = client.channels.cache.get(adminChannelId);
+
+        if (!adminChannel) {
+            console.log("❌ Admin reports channel not found for cleanup");
+            return;
+        }
+
+        console.log(
+            `🧹 Starting COMPLETE cleanup of admin channel: ${adminChannel.name}`,
+        );
+
+        let totalDeletedMessages = 0;
+        let lastMessageId = null;
+
+        // Fetch ALL messages and delete EVERYTHING
+        while (true) {
+            const fetchOptions = { limit: 100 };
+            if (lastMessageId) {
+                fetchOptions.before = lastMessageId;
+            }
+
+            const fetched = await adminChannel.messages.fetch(fetchOptions);
+
+            if (fetched.size === 0) break;
+
+            // Delete ALL messages (bot AND user messages)
+            const messagesToDelete = fetched.filter(() => true); // Select ALL messages
+
+            if (messagesToDelete.size > 0) {
+                // Group messages by age for bulk delete (Discord only allows bulk delete for messages < 14 days)
+                const recentMessages = [];
+                const oldMessages = [];
+
+                messagesToDelete.forEach((msg) => {
+                    const messageAge = Date.now() - msg.createdTimestamp;
+                    if (messageAge < 14 * 24 * 60 * 60 * 1000) {
+                        recentMessages.push(msg);
+                    } else {
+                        oldMessages.push(msg);
+                    }
+                });
+
+                // Bulk delete recent messages
+                if (recentMessages.length > 1) {
+                    // Split into chunks of 100 for bulk delete
+                    for (let i = 0; i < recentMessages.length; i += 100) {
+                        const chunk = recentMessages.slice(i, i + 100);
+                        if (chunk.length > 1) {
+                            await adminChannel.bulkDelete(chunk);
+                        } else if (chunk.length === 1) {
+                            await chunk[0].delete().catch(() => {});
+                        }
+                        await new Promise((resolve) =>
+                            setTimeout(resolve, 1000),
+                        ); // Rate limit protection
+                    }
+                } else if (recentMessages.length === 1) {
+                    await recentMessages[0].delete().catch(() => {});
+                }
+
+                // Individual delete for old messages
+                for (const msg of oldMessages) {
+                    try {
+                        await msg.delete();
+                        await new Promise((resolve) =>
+                            setTimeout(resolve, 500),
+                        ); // Rate limit protection
+                    } catch (error) {
+                        // Ignore delete errors for old messages
+                    }
+                }
+
+                totalDeletedMessages += messagesToDelete.size;
+            }
+
+            // Set lastMessageId for next iteration
+            lastMessageId = fetched.last()?.id;
+
+            // Break if we didn't fetch a full batch
+            if (fetched.size < 100) break;
+
+            // Small delay to avoid rate limits
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+
+        if (totalDeletedMessages > 0) {
+            console.log(
+                `✅ COMPLETE CLEANUP: Removed ${totalDeletedMessages} messages (ALL bot and user messages) from admin channel`,
+            );
+        } else {
+            console.log(
+                `✅ Admin channel was already clean - no messages to remove`,
+            );
+        }
+    } catch (error) {
+        console.error("Error during complete admin channel cleanup:", error);
+    }
+}
+
+// Update startup to include admin tracking panel
+async function performCompleteChannelCleanup(channelId) {
+    try {
+        const channel = client.channels.cache.get(channelId);
+        if (!channel) {
+            console.log(`❌ Channel ${channelId} not found for cleanup`);
+            return;
+        }
+
+        console.log(`🧹 Starting COMPLETE cleanup of channel: ${channel.name} (${channelId})`);
+
+        let totalDeletedMessages = 0;
+        let lastMessageId = null;
+
+        // Fetch ALL messages and delete EVERYTHING
+        while (true) {
+            const fetchOptions = { limit: 100 };
+            if (lastMessageId) {
+                fetchOptions.before = lastMessageId;
+            }
+
+            const fetched = await channel.messages.fetch(fetchOptions);
+
+            if (fetched.size === 0) break;
+
+            // Delete ALL messages (bot AND user messages)
+            const messagesToDelete = fetched.filter(() => true); // Select ALL messages
+
+            if (messagesToDelete.size > 0) {
+                // Group messages by age for bulk delete (Discord only allows bulk delete for messages < 14 days)
+                const recentMessages = [];
+                const oldMessages = [];
+
+                messagesToDelete.forEach((msg) => {
+                    const messageAge = Date.now() - msg.createdTimestamp;
+                    if (messageAge < 14 * 24 * 60 * 60 * 1000) {
+                        recentMessages.push(msg);
+                    } else {
+                        oldMessages.push(msg);
+                    }
+                });
+
+                // Bulk delete recent messages
+                if (recentMessages.length > 1) {
+                    // Split into chunks of 100 for bulk delete
+                    for (let i = 0; i < recentMessages.length; i += 100) {
+                        const chunk = recentMessages.slice(i, i + 100);
+                        if (chunk.length > 1) {
+                            await channel.bulkDelete(chunk);
+                        } else if (chunk.length === 1) {
+                            await chunk[0].delete().catch(() => {});
+                        }
+                        await new Promise((resolve) =>
+                            setTimeout(resolve, 1000),
+                        ); // Rate limit protection
+                    }
+                } else if (recentMessages.length === 1) {
+                    await recentMessages[0].delete().catch(() => {});
+                }
+
+                // Individual delete for old messages
+                for (const msg of oldMessages) {
+                    try {
+                        await msg.delete();
+                        await new Promise((resolve) =>
+                            setTimeout(resolve, 500),
+                        ); // Rate limit protection
+                    } catch (error) {
+                        // Ignore delete errors for old messages
+                    }
+                }
+
+                totalDeletedMessages += messagesToDelete.size;
+            }
+
+            // Set lastMessageId for next iteration
+            lastMessageId = fetched.last()?.id;
+
+            // Break if we didn't fetch a full batch
+            if (fetched.size < 100) break;
+
+            // Small delay to avoid rate limits
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+
+        if (totalDeletedMessages > 0) {
+            console.log(
+                `✅ COMPLETE CLEANUP: Removed ${totalDeletedMessages} messages (ALL bot and user messages) from ${channel.name}`,
+            );
+        } else {
+            console.log(
+                `✅ Channel ${channel.name} was already clean - no messages to remove`,
+            );
+        }
+    } catch (error) {
+        console.error(`Error during complete cleanup of channel ${channelId}:`, error);
+    }
+}
+
+async function cleanupGiftCardSupportTicketInteractions() {
+    // Specific cleanup for gift card support ticket interactions
+    console.log("🧹 Starting Gift Card Support Ticket interaction cleanup...");
+    
+    const giftCardChannel = client.channels.cache.get(CHANNELS.gift_cards);
+    const verificationChannel = client.channels.cache.get(CHANNELS.gift_card_verification);
+    
+    const channelsToClean = [giftCardChannel, verificationChannel].filter(Boolean);
+    
+    for (const channel of channelsToClean) {
+        try {
+            console.log(`🧹 Cleaning gift card support ticket interactions in: ${channel.name}`);
+            
+            let totalCleaned = 0;
+            let lastMessageId = null;
+            
+            while (true) {
+                const fetchOptions = { limit: 100 };
+                if (lastMessageId) {
+                    fetchOptions.before = lastMessageId;
+                }
+                
+                const fetched = await channel.messages.fetch(fetchOptions);
+                if (fetched.size === 0) break;
+                
+                const ticketMessages = fetched.filter((msg) => {
+                    const content = msg.content.toLowerCase();
+                    const hasEmbeds = msg.embeds.length > 0;
+                    
+                    // Specifically target gift card support ticket related messages
+                    const supportTicketPatterns = [
+                        "gift card support ticket",
+                        "support ticket",
+                        "how to get your gift card",
+                        "admin approval",
+                        "contact an admin",
+                        "wait for admin approval",
+                        "receive your gift card code",
+                        "🎫",
+                        "ticket",
+                        "support",
+                        "approval",
+                        "generate gift card",
+                        "redeem gift card",
+                        "convert points",
+                    ];
+                    
+                    const hasTicketPattern = supportTicketPatterns.some(pattern => 
+                        content.includes(pattern)
+                    );
+                    
+                    // Check for ticket-related embeds
+                    const hasTicketEmbed = msg.embeds.some(embed => 
+                        embed.title?.includes("Support Ticket") ||
+                        embed.title?.includes("Gift Card") ||
+                        embed.description?.includes("support ticket") ||
+                        embed.description?.includes("admin approval")
+                    );
+                    
+                    return hasTicketPattern || hasTicketEmbed || 
+                           (msg.author.bot && hasEmbeds && 
+                            msg.embeds.some(e => e.title?.includes("Gift Card")));
+                });
+                
+                if (ticketMessages.size > 0) {
+                    // Delete ticket-related messages
+                    for (const msg of ticketMessages.values()) {
+                        try {
+                            await msg.delete();
+                            totalCleaned++;
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                        } catch (error) {
+                            // Ignore delete errors
+                        }
+                    }
+                }
+                
+                lastMessageId = fetched.last()?.id;
+                if (fetched.size < 100) break;
+                
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+            
+            if (totalCleaned > 0) {
+                console.log(`✅ Cleaned ${totalCleaned} gift card support ticket interactions from ${channel.name}`);
+            }
+            
+        } catch (error) {
+            console.log(`❌ Error cleaning gift card support tickets in ${channel.name}:`, error.message);
+        }
+    }
+}
+
+async function sendStartupPanels() {
+    console.log("🚀 Bot startup sequence initiated...");
+    console.log("🧹 Phase 1: Complete channel cleanup");
+    await cleanupOldPanels();
+
+    // Special complete cleanup for gift cards channel
+    console.log("🧹 Phase 1b: Complete gift cards channel cleanup...");
+    await performCompleteChannelCleanup("1387023764012797972");
+
+    // Phase 1c: Specific cleanup for gift card support ticket interactions
+    console.log("🧹 Phase 1c: Gift card support ticket interaction cleanup...");
+    await cleanupGiftCardSupportTicketInteractions();
+
+    console.log("📋 Phase 2: Deploying fresh panels");
+    await sendDailyClaimPanel();
+    await sendGamblingPanel();
+    await sendGiftCardPanel();
+    await sendLeaderboardPanel();
+    await sendInfoPanel();
+    await sendAdminGiftCardPanel();
+    await sendPointDropTicketPanel();
+    await sendAdminTrackingPanel(); // Add admin tracking panel
+
+    console.log(
+        "✅ Bot startup sequence completed - All systems fresh and operational!",
+    );
+}
+
 // With this (hardcoded, as requested):
 client.login(
-    ".G6lMP7.",
+    "DISCOR_BOT_TOKEN",
 );
 //
 // Recommended secure approach (using environment variable):
