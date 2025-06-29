@@ -49,7 +49,7 @@ graph TD
 ### 📋 Prerequisites
 - Discord Server with Admin permissions
 - Discord Bot Token
-- Node.js environment (Replit handles this)
+- Node.js environment 
 
 ### 🔧 Setup Steps
 
@@ -501,7 +501,7 @@ sequenceDiagram
 | **Commands not working** | Wrong channel | Use commands in designated channels |
 | **DM delivery fails** | User DMs disabled | User: Enable DMs from server members |
 | **Admin commands blocked** | Missing permissions | Check role IDs and user permissions |
-| **Data not saving** | File write error | Check Replit storage permissions |
+
 
 ### 🔍 **Debug Commands**
 
@@ -574,7 +574,6 @@ sequenceDiagram
 ║ Bot Version: 3.0                    ║
 ║ Discord.js: 14.20.0                 ║
 ║ Node.js: 16+                        ║
-║ Platform: Replit                    ║
 ║ Last Updated: January 2025          ║
 ║ Developer: PRIMOIX                  ║
 ╚══════════════════════════════════════╝
@@ -588,14 +587,8 @@ sequenceDiagram
 - Contact admin team in server
 - Review console logs for errors
 
-### 🤝 **Contributing**
-1. Fork the Repl
-2. Make your changes
-3. Test thoroughly
-4. Submit suggestions to admin team
 
 ---
 
 **🎮 Ready to start your diamond empire? Deploy the bot and watch your community engagement soar! 💎**
 
-*Built with ❤️ for Discord communities • Powered by Replit*
