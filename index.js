@@ -31,48 +31,49 @@ const DATA_FILE = "bot_data.json";
 
 // Channel configuration - Update these with your channel IDs
 const CHANNELS = {
-    daily_claims: "CHANNELS ID",
-    point_drops: "CHANNELS ID",
-    leaderboard: "CHANNELS ID",
-    transfers: "CHANNELS ID",
-    gambling: "CHANNELS ID",
-    gift_cards: "CHANNELS ID", // Gift Card Redemption Center
-    gift_card_verification: "CHANNELS ID", // Gift Card Verification Panel
-    information: "CHANNELS ID", // Information Panel
-    admin_reports: "CHANNELS ID", // Admin Reports Channel
-    general: null, // Can be set to allow leaderboard from general channel
+    daily_claims: "",
+    point_drops: "",
+    leaderboard: "",
+    transfers: "",
+    gambling: "",
+    gift_cards: "", // Gift Card Redemption Center
+    gift_card_verification: "", // Gift Card Verification Panel
+    information: "", // Information Panel
+    admin_reports: "", // Admin Reports Channel - AUTO DEEP CLEAN ON RESTART
+    general: "", // Can be set to allow leaderboard from general channel
+    tickets: "", // Ticket System Channel
+    ticket_logs: "", // Ticket Logs Channel
+    ticket_category: "", // Support Tickets category
 };
 
-// Admin role configuration
+// Admin role configuration - Only valid role IDs
 const ADMIN_ROLE_IDS = [
-    "ROLE ID", // Original admin role
-    "ROLE ID", // Overwatcher
-    "ROLE ID", // Developer
-    "ROLE ID", // Management
-    "ROLE ID", // Lead Admin
-    "ROLE ID", // Support Team
-    "ROLE ID", // Chat Mod
-    "ROLE ID", // Trial Mod
+    "", // Original admin role
 ];
+// Admin user IDs with direct access
 const ADMIN_USER_IDS = [
-    "ROLE ID",
-    "ROLE ID",
-    "ROLE ID",
+    "", // Admin user 1
+    "", // Admin user 2
+    "", // Admin user 3
 ];
 
 // Function to check if user has admin role
 function hasAdminRole(interaction) {
     if (!interaction.member) return false;
 
+    // Check if user is in admin user IDs list first
+    if (ADMIN_USER_IDS.includes(interaction.user.id)) {
+        return true;
+    }
+
     // Check if user has any of the admin roles
     for (const roleId of ADMIN_ROLE_IDS) {
-        if (interaction.member.roles.cache.has(roleId)) {
+        if (roleId && roleId !== "ROLE ID" && interaction.member.roles.cache.has(roleId)) {
             return true;
         }
     }
 
-    // Check if user is in admin user IDs list
-    return ADMIN_USER_IDS.includes(interaction.user.id);
+    return false;
 }
 
 // Gift card options
@@ -88,6 +89,81 @@ const GIFT_CARD_SETTINGS = {
     code_length: 12,
 };
 
+// Ticket system configuration
+const TICKET_TYPES = {
+    report_user: {
+        name: "Report a user",
+        emoji: "💬",
+        color: 0xff4757,
+        category: "Moderation",
+    },
+    ban_appeal: {
+        name: "Ban Appeal",
+        emoji: "👁️",
+        color: 0x5352ed,
+        category: "Appeals",
+    },
+    questions: {
+        name: "Questions!",
+        emoji: "❓",
+        color: 0x2ed573,
+        category: "General Support",
+    },
+    billing_support: {
+        name: "Billing Support",
+        emoji: "💳",
+        color: 0xffa502,
+        category: "Billing",
+    },
+    account_issues: {
+        name: "Account Issues",
+        emoji: "📧",
+        color: 0x3742fa,
+        category: "Account",
+    },
+    general_support: {
+        name: "General Support",
+        emoji: "🛠️",
+        color: 0x747d8c,
+        category: "General",
+    },
+};
+
+// Store active tickets in persistent storage
+let activeTickets = new Map();
+let ticketCounter = 1;
+
+// Load ticket data from persistent storage
+function loadTicketData() {
+    if (pointsSystem.data.tickets) {
+        activeTickets = new Map(
+            Object.entries(pointsSystem.data.tickets.active || {}),
+        );
+        ticketCounter = pointsSystem.data.tickets.counter || 1;
+    } else {
+        pointsSystem.data.tickets = {
+            active: {},
+            counter: 1,
+            history: [],
+        };
+    }
+}
+
+// Save ticket data to persistent storage
+async function saveTicketData() {
+    if (!pointsSystem.data.tickets) {
+        pointsSystem.data.tickets = {
+            active: {},
+            counter: ticketCounter,
+            history: [],
+        };
+    }
+
+    pointsSystem.data.tickets.active = Object.fromEntries(activeTickets);
+    pointsSystem.data.tickets.counter = ticketCounter;
+    await pointsSystem.saveData();
+}
+
 class PointsBot {
     constructor() {
         this.data = {
@@ -102,6 +178,11 @@ class PointsBot {
             generated_gift_cards: {}, // Store generated gift cards
             admin_sessions: {}, // Store admin login sessions
             admin_tracking: {}, // Store admin tracking data
+            tickets: {
+                active: {},
+                counter: 1,
+                history: [],
+            },
         };
         this.loadData();
     }
@@ -406,11 +487,17 @@ setInterval(async () => {
     }
 }, 60 * 1000); // Every minute
 
-// Auto-cleanup old messages every 6 hours + Monthly admin reports
+// Auto-cleanup old messages every 6 hours + Monthly admin reports + AUTOMATIC ADMIN CHANNEL DEEP CLEAN
 setInterval(
     async () => {
         console.log("🧹 6-hour auto-cleanup starting...");
         try {
+            // AUTOMATIC DEEP CLEANING of admin reports channel every 6 hours
+            console.log(
+                "🧹 Performing automatic deep cleaning of admin reports channel...",
+            );
+            await performCompleteAdminChannelCleanup();
+
             // Clean up old user-generated gift cards
             const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
             let cleanedCards = 0;
@@ -567,6 +654,10 @@ client.once("ready", async () => {
     console.log(`${client.user.tag} has connected to Discord!`);
     console.log(`Bot is in ${client.guilds.cache.size} guilds`);
 
+    // Load ticket data and restore connections
+    loadTicketData();
+    await restoreTicketConnections();
+
     // Send bot online notification with auto-delete
     try {
         const adminChannel = client.channels.cache.get(CHANNELS.admin_reports);
@@ -574,7 +665,7 @@ client.once("ready", async () => {
             const embed = new EmbedBuilder()
                 .setTitle("🟢 Bot Status Update")
                 .setDescription(
-                    `**${client.user.tag} is now ONLINE!**\n\n🔄 **System Status:**\n✅ Connected to Discord\n✅ All systems operational\n✅ Admin tracking active\n✅ Auto-cleanup enabled\n✅ Enhanced message cleanup active\n\n⏰ **Startup Time:** <t:${Math.floor(Date.now() / 1000)}:F>\n\n🧹 **Auto-Cleanup:** This message will auto-delete in 2 minutes`,
+                    `**${client.user.tag} is now ONLINE!**\n\n🔄 **System Status:**\n✅ Connected to Discord\n✅ All systems operational\n✅ Admin tracking active\n✅ Auto-cleanup enabled\n✅ Enhanced message cleanup active\n✅ Ticket system restored\n\n⏰ **Startup Time:** <t:${Math.floor(Date.now() / 1000)}:F>\n\n🧹 **Auto-Cleanup:** This message will auto-delete in 2 minutes`,
                 )
                 .setColor(0x00ff00)
                 .setTimestamp();
@@ -761,7 +852,9 @@ client.once("ready", async () => {
 
         new SlashCommandBuilder()
             .setName("clean_full_channel")
-            .setDescription("Admin: Complete cleanup of specific channel (all messages)")
+            .setDescription(
+                "Admin: Complete cleanup of specific channel (all messages)",
+            )
             .addStringOption((option) =>
                 option
                     .setName("channel_id")
@@ -769,6 +862,21 @@ client.once("ready", async () => {
                     .setRequired(true),
             )
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+        new SlashCommandBuilder()
+            .setName("send_ticket_panel")
+            .setDescription("Admin: Send the ticket support panel")
+            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+        new SlashCommandBuilder()
+            .setName("close_ticket")
+            .setDescription(
+                "Close the current ticket (only works in ticket channels)",
+            ),
+
+        new SlashCommandBuilder()
+            .setName("ticket_info")
+            .setDescription("Get information about the current ticket"),
     ];
 
     try {
@@ -898,26 +1006,33 @@ client.on("interactionCreate", async (interaction) => {
         }
     } catch (error) {
         console.error("🚨 Interaction error occurred:", error);
-        
+
         // Auto-cleanup gift card support ticket interactions on error
         try {
             await cleanupGiftCardSupportTicketInteractions();
-            console.log("🧹 Gift card support ticket cleanup completed after error");
+            console.log(
+                "🧹 Gift card support ticket cleanup completed after error",
+            );
         } catch (cleanupError) {
             console.error("❌ Error during emergency cleanup:", cleanupError);
         }
-        
+
         // Try to respond to the user if possible
         try {
             const errorEmbed = new EmbedBuilder()
                 .setTitle("❌ System Error")
-                .setDescription("An error occurred. The system has been automatically cleaned up.")
+                .setDescription(
+                    "An error occurred. The system has been automatically cleaned up.",
+                )
                 .setColor(0xff0000);
-                
+
             if (interaction.replied || interaction.deferred) {
                 await interaction.editReply({ embeds: [errorEmbed] });
             } else {
-                await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+                await interaction.reply({
+                    embeds: [errorEmbed],
+                    ephemeral: true,
+                });
             }
         } catch (responseError) {
             console.error("Could not send error response:", responseError);
@@ -998,6 +1113,15 @@ async function handleSlashCommand(interaction) {
                 break;
             case "clean_full_channel":
                 await handleCleanFullChannel(interaction);
+                break;
+            case "send_ticket_panel":
+                await handleSendTicketPanel(interaction);
+                break;
+            case "close_ticket":
+                await handleCloseTicketCommand(interaction);
+                break;
+            case "ticket_info":
+                await handleTicketInfo(interaction);
                 break;
         }
     } catch (error) {
@@ -1107,6 +1231,46 @@ async function handleButtonInteraction(interaction) {
             case "admin_status":
                 await handleAdminStatus(interaction);
                 break;
+            case "open_ticket":
+                await showTicketSelectMenu(interaction);
+                break;
+        }
+
+        // Handle ticket types
+        if (customId.endsWith("_ticket")) {
+            const ticketType = customId.replace("_ticket", "");
+            if (TICKET_TYPES[ticketType]) {
+                await handleTicketCreation(interaction, ticketType);
+            }
+        }
+
+        // Handle ticket management
+        if (customId.startsWith("close_ticket_")) {
+            const ticketId = customId.replace("close_ticket_", "");
+            await handleCloseTicket(interaction, ticketId);
+        } else if (customId.startsWith("admin_close_ticket_")) {
+            const ticketId = customId.replace("admin_close_ticket_", "");
+            if (hasAdminRole(interaction)) {
+                await handleCloseTicket(interaction, ticketId);
+            } else {
+                await interaction.reply({
+                    content: "❌ Only staff can use this button!",
+                    ephemeral: true,
+                });
+            }
+        } else if (customId.startsWith("ticket_info_")) {
+            const ticketId = customId.replace("ticket_info_", "");
+            await handleTicketInfoButton(interaction, ticketId);
+        } else if (customId.startsWith("admin_respond_ticket_")) {
+            const ticketId = customId.replace("admin_respond_ticket_", "");
+            if (hasAdminRole(interaction)) {
+                await handleAdminRespondButton(interaction, ticketId);
+            } else {
+                await interaction.reply({
+                    content: "❌ Only staff can use this button!",
+                    ephemeral: true,
+                });
+            }
         }
 
         // Handle ticket approval/rejection
@@ -1156,6 +1320,8 @@ async function handleButtonInteraction(interaction) {
 async function handleSelectMenuInteraction(interaction) {
     if (interaction.customId === "gift_card_select") {
         await handleGiftCardSelection(interaction);
+    } else if (interaction.customId === "ticket_type_select") {
+        await handleTicketTypeSelection(interaction);
     }
 }
 
@@ -1175,9 +1341,89 @@ async function handleModalSubmit(interaction) {
             await handleAdminGiftCardGeneration(interaction);
         } else if (customId === "point_drop_ticket_modal") {
             await handlePointDropTicketSubmission(interaction);
+        } else if (customId.startsWith("admin_response_")) {
+            const ticketId = customId.replace("admin_response_", "");
+            await handleAdminResponseSubmit(interaction, ticketId);
         }
     } catch (error) {
         console.error("Error handling modal submit:", error);
+    }
+}
+
+async function handleAdminResponseSubmit(interaction, ticketId) {
+    try {
+        const ticket = activeTickets.get(ticketId);
+        if (!ticket) {
+            return await interaction.reply({
+                content: "❌ Ticket not found!",
+                ephemeral: true,
+            });
+        }
+
+        const responseMessage =
+            interaction.fields.getTextInputValue("response_message");
+        const user = await client.users.fetch(ticket.userId);
+
+        // Send response to user
+        const responseEmbed = new EmbedBuilder()
+            .setTitle("💬 Staff Response")
+            .setDescription(
+                `**Ticket ID:** \`${ticketId}\`\n**Staff Member:** ${interaction.user.tag}\n\n**Response:**\n${responseMessage}`,
+            )
+            .setColor(0x0099ff)
+            .setThumbnail(interaction.user.displayAvatarURL())
+            .setTimestamp();
+
+        const continueButton = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`close_ticket_${ticketId}`)
+                .setLabel("🔒 Close Ticket")
+                .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+                .setCustomId(`ticket_info_${ticketId}`)
+                .setLabel("ℹ️ Ticket Info")
+                .setStyle(ButtonStyle.Secondary),
+        );
+
+        await user.send({
+            embeds: [responseEmbed],
+            components: [continueButton],
+        });
+
+        // Store admin response in ticket
+        if (!ticket.adminResponses) ticket.adminResponses = [];
+        ticket.adminResponses.push({
+            staffId: interaction.user.id,
+            staffTag: interaction.user.tag,
+            message: responseMessage,
+            timestamp: new Date().toISOString(),
+        });
+
+        await saveTicketData();
+
+        // Confirm to admin
+        const confirmEmbed = new EmbedBuilder()
+            .setTitle("✅ Response Sent")
+            .setDescription(
+                `**Ticket ID:** \`${ticketId}\`\n**User:** ${user.tag}\n\n**Your response has been sent to the user.**`,
+            )
+            .setColor(0x00ff00);
+
+        await interaction.reply({ embeds: [confirmEmbed], ephemeral: true });
+
+        // Log the response
+        await logTicketAction(
+            ticketId,
+            "staff_response",
+            interaction.user,
+            `Staff response sent`,
+        );
+    } catch (error) {
+        console.error("Error handling admin response:", error);
+        await interaction.reply({
+            content: "❌ An error occurred while sending your response.",
+            ephemeral: true,
+        });
     }
 }
 
@@ -1855,7 +2101,7 @@ async function handleGiftCardSelection(interaction) {
         claimed_at: null,
         void_reason: null,
         admin_generated: false,
-        card_type: cardType
+        card_type: cardType,
     };
 
     pointsSystem.data.generated_gift_cards[giftCardCode] = giftCard;
@@ -1896,11 +2142,14 @@ async function handleGiftCardSelection(interaction) {
                     name: "📧 DM Status",
                     value: "✅ Code sent successfully!",
                     inline: true,
-                }
+                },
             )
             .setColor(0x00ff00);
 
-        const reply = await interaction.update({ embeds: [successEmbed], components: [] });
+        const reply = await interaction.update({
+            embeds: [successEmbed],
+            components: [],
+        });
 
         // Auto-delete after 5 minutes
         setTimeout(
@@ -1916,7 +2165,6 @@ async function handleGiftCardSelection(interaction) {
             },
             5 * 60 * 1000,
         );
-
     } catch (error) {
         // DM failed - show code in the interaction response
         const fallbackEmbed = new EmbedBuilder()
@@ -1939,11 +2187,14 @@ async function handleGiftCardSelection(interaction) {
                     name: "⚠️ DM Failed",
                     value: "Enable DMs to receive codes privately",
                     inline: true,
-                }
+                },
             )
             .setColor(0xffaa00);
 
-        const reply = await interaction.update({ embeds: [fallbackEmbed], components: [] });
+        const reply = await interaction.update({
+            embeds: [fallbackEmbed],
+            components: [],
+        });
 
         // Auto-delete after 10 minutes for security
         setTimeout(
@@ -2139,14 +2390,17 @@ async function handleOpenGiftTicket(interaction) {
         .setColor(0x0099ff);
 
     const reply = await interaction.reply({ embeds: [embed], ephemeral: true });
-    
+
     // Auto-delete after 30 seconds
     setTimeout(async () => {
         try {
             await reply.delete();
             console.log("🧹 Auto-deleted gift card support ticket response");
         } catch (error) {
-            console.log("Could not delete gift card support ticket response:", error.message);
+            console.log(
+                "Could not delete gift card support ticket response:",
+                error.message,
+            );
         }
     }, 30 * 1000); // 30 seconds
 }
@@ -2366,7 +2620,7 @@ async function handleGiftCardGeneration(interaction) {
         claimed_by: null,
         claimed_at: null,
         void_reason: null,
-        admin_generated: false
+        admin_generated: false,
     };
 
     pointsSystem.data.generated_gift_cards[giftCardCode] = giftCard;
@@ -2407,11 +2661,14 @@ async function handleGiftCardGeneration(interaction) {
                     name: "📧 DM Status",
                     value: "✅ Code sent successfully!",
                     inline: true,
-                }
+                },
             )
             .setColor(0x00ff00);
 
-        const reply = await interaction.reply({ embeds: [successEmbed], ephemeral: true });
+        const reply = await interaction.reply({
+            embeds: [successEmbed],
+            ephemeral: true,
+        });
 
         // Auto-delete after 5 minutes
         setTimeout(
@@ -2427,7 +2684,6 @@ async function handleGiftCardGeneration(interaction) {
             },
             5 * 60 * 1000,
         );
-
     } catch (error) {
         // DM failed - show code in the interaction response
         const fallbackEmbed = new EmbedBuilder()
@@ -2450,11 +2706,14 @@ async function handleGiftCardGeneration(interaction) {
                     name: "⚠️ DM Failed",
                     value: "Enable DMs to receive codes privately",
                     inline: true,
-                }
+                },
             )
             .setColor(0xffaa00);
 
-        const reply = await interaction.reply({ embeds: [fallbackEmbed], ephemeral: true });
+        const reply = await interaction.reply({
+            embeds: [fallbackEmbed],
+            ephemeral: true,
+        });
 
         // Auto-delete after 10 minutes for security
         setTimeout(
@@ -2552,10 +2811,13 @@ async function handleCheckGiftCard(interaction) {
                 statusColor = 0x808080;
         }
 
+        // Calculate PCRP coin value
+        const pcrpCoins = Math.floor(giftCard.value / 100);
+
         embed = new EmbedBuilder()
             .setTitle("🔍 Gift Card Status Check")
             .setDescription(
-                `**Gift Card Code:** \`${giftCardCode}\`\n\n**Status:** ${statusEmoji} **${statusText}**\n**Value:** ${giftCard.value.toLocaleString()} 💎\n**Created:** <t:${Math.floor(createdDate.getTime() / 1000)}:F>\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>${claimedInfo}`,
+                `**Gift Card Code:** \`${giftCardCode}\`\n\n**Status:** ${statusEmoji} **${statusText}**\n**Value:** ${giftCard.value.toLocaleString()} 💎 = ${pcrpCoins} PCRP Coins\n**Conversion Rate:** 100 💎 = 1 PCRP Coin\n**Created:** <t:${Math.floor(createdDate.getTime() / 1000)}:F>\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>${claimedInfo}`,
             )
             .setColor(statusColor);
     }
@@ -2603,7 +2865,7 @@ async function handleGenerateGiftCard(interaction) {
         claimed_by: null,
         claimed_at: null,
         void_reason: null,
-        admin_generated: false
+        admin_generated: false,
     };
 
     pointsSystem.data.generated_gift_cards[giftCardCode] = giftCard;
@@ -2644,12 +2906,11 @@ async function handleGenerateGiftCard(interaction) {
                     name: "📧 DM Status",
                     value: "✅ Code sent successfully!",
                     inline: true,
-                }
+                },
             )
             .setColor(0x00ff00);
 
         await interaction.reply({ embeds: [successEmbed], ephemeral: true });
-
     } catch (error) {
         // DM failed - show code in the interaction response
         const fallbackEmbed = new EmbedBuilder()
@@ -2672,7 +2933,7 @@ async function handleGenerateGiftCard(interaction) {
                     name: "⚠️ DM Failed",
                     value: "Enable DMs to receive codes privately",
                     inline: true,
-                }
+                },
             )
             .setColor(0xffaa00);
 
@@ -2721,10 +2982,13 @@ async function handleAdminGiftCardGeneration(interaction) {
     const expiryDate = new Date();
     expiryDate.setDate(expiryDate.getDate() + GIFT_CARD_SETTINGS.validity_days);
 
+    // Calculate PCRP coin value
+    const pcrpCoins = Math.floor(diamondAmount / 100);
+
     const embed = new EmbedBuilder()
         .setTitle("🛡️ Admin Gift Card Generated!")
         .setDescription(
-            `**Gift Card Code:** \`${giftCardCode}\`\n\n**Value:** ${diamondAmount.toLocaleString()} 💎\n**Status:** ✅ Valid\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>\n**Generated by:** Admin\n\n⚠️ **Admin Generated:** This gift card was created without deducting diamonds.\n\n🔒 **Security:** This code has been sent to your DMs for secure handling.`,
+            `**Gift Card Code:** \`${giftCardCode}\`\n\n**Value:** ${diamondAmount.toLocaleString()} 💎 = ${pcrpCoins} PCRP Coins\n**Conversion Rate:** 100 💎 = 1 PCRP Coin\n**Status:** ✅ Valid\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>\n**Generated by:** Admin\n\n⚠️ **Admin Generated:** This gift card was created without deducting diamonds.\n\n🔒 **Security:** This code has been sent to your DMs for secure handling.`,
         )
         .setColor(0xff0000);
 
@@ -2733,7 +2997,7 @@ async function handleAdminGiftCardGeneration(interaction) {
         const dmEmbed = new EmbedBuilder()
             .setTitle("🛡️ Admin Generated Gift Card")
             .setDescription(
-                `**Gift Card Code:** \`${giftCardCode}\`\n\n**Value:** ${diamondAmount.toLocaleString()} 💎\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>\n**Generated by:** Admin Panel\n\n🔒 **Admin Access:** Keep this code secure! You can share it with users or use it for giveaways.\n\n✅ **Features:**\n• Check status with \`/check_gift_card\`\n• Valid for 7 days\n• Can be claimed by any user`,
+                `**Gift Card Code:** \`${giftCardCode}\`\n\n**Value:** ${diamondAmount.toLocaleString()} 💎 = ${pcrpCoins} PCRP Coins\n**Conversion Rate:** 100 💎 = 1 PCRP Coin\n**Expires:** <t:${Math.floor(expiryDate.getTime() / 1000)}:F>\n**Generated by:** Admin Panel\n\n🔒 **Admin Access:** Keep this code secure! You can share it with users or use it for giveaways.\n\n✅ **Features:**\n• Check status with \`/check_gift_card\`\n• Valid for 7 days\n• Can be claimed by any user`,
             )
             .setColor(0xff0000);
 
@@ -3102,7 +3366,7 @@ async function showAdminCommands(interaction) {
             },
             {
                 name: "⚙️ Configuration",
-                value: `• Daily Reward: 50 💎 (base)\n• Max Streak: 3x multiplier\n• Conversion Rate: 100 💎 = 1 Rupee\n• Data stored in: \`bot_data.json\``,
+                value: `• Daily Reward: 50 💎 (base)\n• Max Streak: 3x multiplier\n• Conversion Rate: 100 💎 = 1 PCRP Coin\n• Data stored in: \`bot_data.json\``,
                 inline: false,
             },
         )
@@ -3111,11 +3375,390 @@ async function showAdminCommands(interaction) {
     await interaction.reply({ embeds: [embed], ephemeral: true });
 }
 
+// Ticket System Functions
+function createTicketPanelButtons() {
+    // No buttons - only using dropdown menu
+    return [];
+}
+
+function createTicketSelectMenu() {
+    const options = Object.entries(TICKET_TYPES).map(([type, config]) => ({
+        label: config.name,
+        description: `${config.category} - Create a ${config.name.toLowerCase()} ticket`,
+        emoji: config.emoji,
+        value: type,
+    }));
+
+    return new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+            .setCustomId("ticket_type_select")
+            .setPlaceholder("Select the option that best fits your problem...")
+            .addOptions(options),
+    );
+}
+
+function generateTicketId() {
+    const id = `PCRP${ticketCounter}`;
+    ticketCounter++;
+    return id;
+}
+
+async function createTicketChannel(user, ticketType, ticketId) {
+    try {
+        const config = TICKET_TYPES[ticketType];
+        const targetGuildId = ""; // Specific server ID
+        const targetCategoryId = ""; // Specific category ID
+        
+        // Get the specific guild by ID
+        const guild = client.guilds.cache.get(targetGuildId);
+
+        if (!guild) {
+            console.error(`Target guild ${targetGuildId} not found`);
+            return null;
+        }
+
+        // Verify the user is in the target guild
+        try {
+            await guild.members.fetch(user.id);
+        } catch (error) {
+            console.error(`User ${user.id} not found in target guild ${targetGuildId}`);
+            return null;
+        }
+
+        // Verify the category exists
+        const ticketCategory = guild.channels.cache.get(targetCategoryId);
+        if (!ticketCategory || ticketCategory.type !== 4) { // 4 = Category channel
+            console.log(`Ticket category ${targetCategoryId} not found in guild ${targetGuildId}`);
+            return null;
+        }
+
+        // Create permission overwrites array with validated IDs only
+        const permissionOverwrites = [
+            {
+                id: guild.id, // @everyone role
+                deny: ["ViewChannel"],
+            },
+            {
+                id: user.id,
+                allow: [
+                    "ViewChannel",
+                    "SendMessages",
+                    "ReadMessageHistory",
+                ],
+            },
+        ];
+
+        // Add admin roles that actually exist in the target guild
+        for (const roleId of ADMIN_ROLE_IDS) {
+            if (roleId && roleId !== "ROLE ID") {
+                const role = guild.roles.cache.get(roleId);
+                if (role) {
+                    permissionOverwrites.push({
+                        id: roleId,
+                        allow: [
+                            "ViewChannel",
+                            "SendMessages",
+                            "ReadMessageHistory",
+                            "ManageMessages",
+                        ],
+                    });
+                    console.log(`Added admin role ${role.name} to ticket permissions`);
+                } else {
+                    console.log(`Admin role ${roleId} not found in target guild, skipping`);
+                }
+            }
+        }
+
+        // Add admin users that exist in the target guild (only if ADMIN_USER_IDS is not empty)
+        if (ADMIN_USER_IDS.length > 0) {
+            for (const userId of ADMIN_USER_IDS) {
+                if (userId && userId !== "ROLE ID") {
+                    try {
+                        const member = await guild.members.fetch(userId);
+                        if (member) {
+                            permissionOverwrites.push({
+                                id: userId,
+                                allow: [
+                                    "ViewChannel",
+                                    "SendMessages",
+                                    "ReadMessageHistory",
+                                    "ManageMessages",
+                                ],
+                            });
+                            console.log(`Added admin user ${member.user.tag} to ticket permissions`);
+                        }
+                    } catch (error) {
+                        console.log(`Admin user ${userId} not found in target guild, skipping`);
+                    }
+                }
+            }
+        }
+
+        // Create ticket channel in the specific guild and category
+        const ticketChannel = await guild.channels.create({
+            name: `ticket-${ticketId.toLowerCase()}`,
+            type: 0, // Text channel
+            parent: targetCategoryId, // Use the specific category ID
+            permissionOverwrites: permissionOverwrites,
+        });
+
+        console.log(`✅ Created ticket channel ${ticketChannel.name} in guild ${guild.name} under category ${ticketCategory.name}`);
+
+        // Create ticket buttons for channel
+        const ticketButtons = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`close_ticket_${ticketId}`)
+                .setLabel("🔒 Close Ticket")
+                .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+                .setCustomId(`ticket_info_${ticketId}`)
+                .setLabel("ℹ️ Ticket Info")
+                .setStyle(ButtonStyle.Secondary),
+        );
+
+        const ticketEmbed = new EmbedBuilder()
+            .setTitle(`🎫 ${config.name} Ticket`)
+            .setDescription(
+                `**Ticket ID:** \`${ticketId}\`\n**Type:** ${config.name}\n**Status:** 🟢 Open\n**User:** ${user}\n**Server:** ${guild.name}\n\n**Welcome to your support ticket!**\n\nYour ticket has been created successfully. Please describe your ${config.name.toLowerCase()} in detail below.\n\n**What happens next:**\n• Staff can respond directly in this channel\n• You can close this ticket anytime using the button below\n• This channel will be deleted when the ticket is closed\n\n⚠️ **Do not share passwords or other sensitive information.**`,
+            )
+            .addFields({
+                name: "📝 Instructions",
+                value: "• Provide as much detail as possible\n• Be patient while waiting for staff response\n• Use the buttons below to manage your ticket",
+                inline: false,
+            })
+            .setColor(config.color)
+            .setTimestamp()
+            .setThumbnail(user.displayAvatarURL());
+
+        const channelMessage = await ticketChannel.send({
+            embeds: [ticketEmbed],
+            components: [ticketButtons],
+        });
+
+        return { channel: ticketChannel, message: channelMessage };
+    } catch (error) {
+        console.error("Error creating ticket channel:", error);
+        return null;
+    }
+}
+
+async function handleTicketCreation(interaction, ticketType) {
+    try {
+        const config = TICKET_TYPES[ticketType];
+        const ticketId = generateTicketId();
+        const targetGuildId = ""; // Specific server ID
+
+        // Check if the interaction is from the target server
+        if (interaction.guildId !== targetGuildId) {
+            const embed = new EmbedBuilder()
+                .setTitle("❌ Wrong Server")
+                .setDescription(
+                    `Ticket creation is only available in the designated server.\n\n**Current Server:** ${interaction.guild?.name || "Unknown"}\n**Required Server ID:** \`${targetGuildId}\`\n\nPlease use the ticket system in the correct server.`,
+                )
+                .setColor(0xff0000);
+
+            return await interaction.reply({
+                embeds: [embed],
+                ephemeral: true,
+            });
+        }
+
+        // Check if user already has an active ticket
+        const existingTicket = Array.from(activeTickets.values()).find(
+            (ticket) =>
+                ticket.userId === interaction.user.id &&
+                ticket.status === "open",
+        );
+
+        if (existingTicket) {
+            const embed = new EmbedBuilder()
+                .setTitle("❌ Active Ticket Exists")
+                .setDescription(
+                    `You already have an active ticket with ID: \`${existingTicket.id}\`\n\nPlease close your existing ticket before creating a new one.`,
+                )
+                .setColor(0xff0000);
+
+            return await interaction.reply({
+                embeds: [embed],
+                ephemeral: true,
+            });
+        }
+
+        await interaction.deferReply({ ephemeral: true });
+
+        // Create ticket channel
+        const ticketResult = await createTicketChannel(
+            interaction.user,
+            ticketType,
+            ticketId,
+        );
+
+        if (!ticketResult) {
+            const errorEmbed = new EmbedBuilder()
+                .setTitle("❌ Error Creating Ticket")
+                .setDescription(
+                    `Failed to create ticket channel. This could be due to:\n\n• Missing permissions in the target server\n• Category channel not found\n• You're not a member of the target server\n\n**Target Server ID:** \`${targetGuildId}\`\n**Category ID:** \`1392500468336562327\`\n\nPlease contact an administrator if this issue persists.`,
+                )
+                .setColor(0xff0000);
+
+            return await interaction.editReply({ embeds: [errorEmbed] });
+        }
+
+        // Store ticket data
+        const ticketData = {
+            id: ticketId,
+            userId: interaction.user.id,
+            type: ticketType,
+            status: "open",
+            createdAt: new Date().toISOString(),
+            claimedBy: null,
+            channelId: ticketResult.channel.id,
+            messages: [],
+            guildId: targetGuildId,
+        };
+
+        activeTickets.set(ticketId, ticketData);
+        await saveTicketData();
+
+        // Notify staff in ticket logs channel
+        await logTicketAction(
+            ticketId,
+            "created",
+            interaction.user,
+            `Ticket created: ${config.name} in <#${ticketResult.channel.id}> (Server: ${interaction.guild.name})`,
+        );
+
+        // Confirm to user
+        const successEmbed = new EmbedBuilder()
+            .setTitle("✅ Ticket Created Successfully!")
+            .setDescription(
+                `Your ticket channel has been created in the designated server!\n\n**Ticket ID:** \`${ticketId}\`\n**Type:** ${config.name}\n**Channel:** <#${ticketResult.channel.id}>\n**Server:** ${interaction.guild.name}\n**Category:** Support Tickets\n\n🔔 Our staff team can now assist you in your ticket channel.`,
+            )
+            .setColor(0x00ff00);
+
+        await interaction.editReply({ embeds: [successEmbed] });
+    } catch (error) {
+        console.error("Error in ticket creation:", error);
+
+        const errorEmbed = new EmbedBuilder()
+            .setTitle("❌ Error")
+            .setDescription(
+                `An error occurred while creating your ticket.\n\n**Error Details:** ${error.message}\n\nPlease try again or contact an administrator if this issue persists.`,
+            )
+            .setColor(0xff0000);
+
+        if (interaction.deferred) {
+            await interaction.editReply({ embeds: [errorEmbed] });
+        } else {
+            await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+        }
+    }
+}
+
+async function logTicketAction(ticketId, action, user, details = "") {
+    try {
+        const logChannel = client.channels.cache.get(CHANNELS.ticket_logs);
+        if (!logChannel) return;
+
+        const embed = new EmbedBuilder()
+            .setTitle(
+                `🎫 Ticket ${action.charAt(0).toUpperCase() + action.slice(1)}`,
+            )
+            .setDescription(
+                `**Ticket ID:** \`${ticketId}\`\n**Action:** ${action}\n**User:** ${user.tag} (${user.id})\n**Time:** <t:${Math.floor(Date.now() / 1000)}:F>\n\n${details}`,
+            )
+            .setColor(
+                action === "created"
+                    ? 0x00ff00
+                    : action === "closed"
+                      ? 0xff0000
+                      : 0xffaa00,
+            )
+            .setThumbnail(user.displayAvatarURL())
+            .setTimestamp();
+
+        // Add close button for staff if ticket is open
+        const components = [];
+        if (action === "created" || action === "message") {
+            const ticket = activeTickets.get(ticketId);
+            if (ticket && ticket.status === "open") {
+                const adminButtons = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`admin_close_ticket_${ticketId}`)
+                        .setLabel("🔒 Close Ticket (Admin)")
+                        .setStyle(ButtonStyle.Danger),
+                    new ButtonBuilder()
+                        .setCustomId(`admin_respond_ticket_${ticketId}`)
+                        .setLabel("💬 Respond to User")
+                        .setStyle(ButtonStyle.Primary),
+                );
+                components.push(adminButtons);
+            }
+        }
+
+        await logChannel.send({ embeds: [embed], components });
+    } catch (error) {
+        console.error("Error logging ticket action:", error);
+    }
+}
+
+async function restoreTicketConnections() {
+    console.log("🔄 Restoring ticket connections after restart...");
+    let restoredCount = 0;
+    let closedCount = 0;
+
+    for (const [ticketId, ticket] of activeTickets) {
+        try {
+            if (ticket.status !== "open") continue;
+
+            // Check if ticket channel still exists
+            if (ticket.channelId) {
+                const channel = client.channels.cache.get(ticket.channelId);
+                if (channel) {
+                    restoredCount++;
+                    console.log(
+                        `✅ Restored ticket ${ticketId} in channel #${channel.name}`,
+                    );
+                } else {
+                    console.log(
+                        `❌ Ticket channel for ${ticketId} no longer exists`,
+                    );
+                    ticket.status = "closed";
+                    closedCount++;
+                }
+            } else {
+                console.log(`❌ Ticket ${ticketId} has no channel ID`);
+                ticket.status = "closed";
+                closedCount++;
+            }
+        } catch (error) {
+            console.log(
+                `❌ Could not restore ticket ${ticketId}:`,
+                error.message,
+            );
+            const ticket = activeTickets.get(ticketId);
+            if (ticket) {
+                ticket.status = "closed";
+                closedCount++;
+            }
+        }
+    }
+
+    if (restoredCount > 0 || closedCount > 0) {
+        await saveTicketData();
+        console.log(
+            `✅ Ticket restoration complete: ${restoredCount} restored, ${closedCount} auto-closed`,
+        );
+    } else {
+        console.log("ℹ️ No active tickets to restore");
+    }
+}
+
 // Point Drop Ticket System
 let pointDropTickets = {}; // Store tickets in memory
 
 function generateTicketId() {
-    return "PD-" + Math.random().toString(36).substring(2, 10).toUpperCase();
+    return "PCRP-" + Math.random().toString(36).substring(2, 10).toUpperCase();
 }
 
 function createPointDropTicketButtons() {
@@ -3143,9 +3786,9 @@ function createPointDropTicketButtons() {
 async function showPointDropTicketModal(interaction) {
     // Restrict to specific admin user IDs only
     const allowedUserIDs = [
-        "879396413010743337",
-        "959692217885294632",
-        "1054207830292447324",
+        "",
+        "",
+        "",
     ];
 
     if (!allowedUserIDs.includes(interaction.user.id)) {
@@ -3988,7 +4631,7 @@ async function sendInfoPanel() {
         const embed = new EmbedBuilder()
             .setTitle("ℹ️ Diamond Points Bot Information Center")
             .setDescription(
-                `**Welcome to the Complete Bot Guide!**\n\`\`\`\n    ℹ️ HELP CENTER ℹ️\n  ╔═══════════════════╗\n  ║ 📖 USER COMMANDS  ║\n  ║ 🛡️ ADMIN COMMANDS ║\n  ║ 💎 BOT FEATURES   ║\n  ╚═══════════════════╝\n\`\`\`\n\n**Quick Start Guide:**\n💎 **New Users:** Start with \`/claim_daily\` in <#${CHANNELS.daily_claims}>\n🎲 **Gaming:** Visit <#${CHANNELS.gambling}> for casino games\n🎁 **Rewards:** Use <#${CHANNELS.gift_cards}> to redeem prizes\n🏆 **Rankings:** Check <#${CHANNELS.leaderboard}> for top players\n\n**Bot Economy:**\n• Base Daily Reward: 50 💎\n• Streak Multiplier: Up to 3x\n• Gift Card Range: 500-100,000 💎\n• Conversion Rate: 100 💎 = 1 Rupee\n\n**Commands Available:**\n• \`/info\` - Show this panel\n• Use buttons below for detailed command lists\n\nClick a button below to view command details!`,
+                `**Welcome to the Complete Bot Guide!**\n\`\`\`\n    ℹ️ HELP CENTER ℹ️\n  ╔═══════════════════╗\n  ║ 📖 USER COMMANDS  ║\n  ║ 🛡️ ADMIN COMMANDS ║\n  ║ 💎 BOT FEATURES   ║\n  ╚═══════════════════╝\n\`\`\`\n\n**Quick Start Guide:**\n💎 **New Users:** Start with \`/claim_daily\` in <#${CHANNELS.daily_claims}>\n🎲 **Gaming:** Visit <#${CHANNELS.gambling}> for casino games\n🎁 **Rewards:** Use <#${CHANNELS.gift_cards}> to redeem prizes\n🏆 **Rankings:** Check <#${CHANNELS.leaderboard}> for top players\n\n**Bot Economy:**\n• Base Daily Reward: 50 💎\n• Streak Multiplier: Up to 3x\n• Gift Card Range: 500-100,000 💎\n• Conversion Rate: 100 💎 = 1 PCRP Coin\n\n**Commands Available:**\n• \`/info\` - Show this panel\n• Use buttons below for detailed command lists\n\nClick a button below to view command details!`,
             )
             .setColor(0x00bfff);
 
@@ -4087,6 +4730,7 @@ async function performEnhancedChannelCleanup() {
         CHANNELS.information,
         CHANNELS.gift_card_verification,
         CHANNELS.point_drops,
+        CHANNELS.tickets,
     ];
 
     for (const channelId of channels) {
@@ -4496,7 +5140,7 @@ async function handleCleanFullChannel(interaction) {
     }
 
     const channelId = interaction.options.getString("channel_id");
-    
+
     await interaction.reply({
         content: `🧹 Starting COMPLETE cleanup of channel ${channelId}...`,
         ephemeral: true,
@@ -4504,7 +5148,7 @@ async function handleCleanFullChannel(interaction) {
 
     try {
         await performCompleteChannelCleanup(channelId);
-        
+
         const embed = new EmbedBuilder()
             .setTitle("🧹 Complete Channel Cleanup Finished!")
             .setDescription(
@@ -4514,19 +5158,24 @@ async function handleCleanFullChannel(interaction) {
             .setTimestamp();
 
         await interaction.followUp({ embeds: [embed], ephemeral: true });
-        
-        console.log(`🧹 Manual complete cleanup of channel ${channelId} completed by admin:`, interaction.user.tag);
-        
+
+        console.log(
+            `🧹 Manual complete cleanup of channel ${channelId} completed by admin:`,
+            interaction.user.tag,
+        );
     } catch (error) {
-        console.error(`Error during complete cleanup of channel ${channelId}:`, error);
-        
+        console.error(
+            `Error during complete cleanup of channel ${channelId}:`,
+            error,
+        );
+
         const errorEmbed = new EmbedBuilder()
             .setTitle("❌ Cleanup Error")
             .setDescription(
                 `Failed to complete cleanup of channel \`${channelId}\`.\n\nError: ${error.message}`,
             )
             .setColor(0xff0000);
-            
+
         await interaction.followUp({ embeds: [errorEmbed], ephemeral: true });
     }
 }
@@ -4650,7 +5299,7 @@ async function generateMonthlyAdminReport() {
 async function performCompleteAdminChannelCleanup() {
     // Complete cleanup of admin reports channel - removes ALL messages (bot and user)
     try {
-        const adminChannelId = "1387168027027574875"; // Hardcoded as requested
+        const adminChannelId = CHANNELS.admin_reports; // Use the configured admin reports channel
         const adminChannel = client.channels.cache.get(adminChannelId);
 
         if (!adminChannel) {
@@ -4759,7 +5408,9 @@ async function performCompleteChannelCleanup(channelId) {
             return;
         }
 
-        console.log(`🧹 Starting COMPLETE cleanup of channel: ${channel.name} (${channelId})`);
+        console.log(
+            `🧹 Starting COMPLETE cleanup of channel: ${channel.name} (${channelId})`,
+        );
 
         let totalDeletedMessages = 0;
         let lastMessageId = null;
@@ -4845,39 +5496,499 @@ async function performCompleteChannelCleanup(channelId) {
             );
         }
     } catch (error) {
-        console.error(`Error during complete cleanup of channel ${channelId}:`, error);
+        console.error(
+            `Error during complete cleanup of channel ${channelId}:`,
+            error,
+        );
+    }
+}
+
+// Ticket System Handler Functions
+async function handleSendTicketPanel(interaction) {
+    if (!hasAdminRole(interaction)) {
+        const embed = new EmbedBuilder()
+            .setTitle("❌ Access Denied")
+            .setDescription("You need admin privileges to use this command.")
+            .setColor(0xff0000);
+        return await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    await sendTicketPanel();
+    await interaction.reply({
+        content: "✅ Ticket support panel sent!",
+        ephemeral: true,
+    });
+}
+
+async function showTicketSelectMenu(interaction) {
+    const embed = new EmbedBuilder()
+        .setTitle("🎫 Support Tickets")
+        .setDescription(
+            "**Select the option that best fits your problem. A support ticket will be created for you automatically.**\n\nChoose from the dropdown menu below to create your ticket.",
+        )
+        .setColor(0x0099ff)
+        .setThumbnail(client.user.displayAvatarURL());
+
+    const selectMenu = createTicketSelectMenu();
+    await interaction.reply({
+        embeds: [embed],
+        components: [selectMenu],
+        ephemeral: true,
+    });
+}
+
+async function handleTicketTypeSelection(interaction) {
+    const ticketType = interaction.values[0];
+    await handleTicketCreation(interaction, ticketType);
+}
+
+async function handleCloseTicket(interaction, ticketId) {
+    try {
+        const ticket = activeTickets.get(ticketId);
+        if (!ticket) {
+            return await interaction.reply({
+                content: "❌ Ticket not found!",
+                ephemeral: true,
+            });
+        }
+
+        const isAdmin = ADMIN_USER_IDS.includes(interaction.user.id) || hasAdminRole(interaction);
+        const isOwner = ticket.userId === interaction.user.id;
+
+        if (!isAdmin && !isOwner) {
+            return await interaction.reply({
+                content: "❌ You can only close your own tickets!",
+                ephemeral: true,
+            });
+        }
+
+        // Update ticket status
+        ticket.status = "closed";
+        ticket.closedBy = interaction.user.id;
+        ticket.closedAt = new Date().toISOString();
+
+        // Create ticket transcript from channel messages
+        const transcript = await createChannelTranscript(ticket);
+
+        // Save to ticket history
+        if (!pointsSystem.data.tickets.history) {
+            pointsSystem.data.tickets.history = [];
+        }
+        pointsSystem.data.tickets.history.push({
+            ...ticket,
+            transcript: transcript,
+        });
+
+        const embed = new EmbedBuilder()
+            .setTitle("🔒 Ticket Closed")
+            .setDescription(
+                `**Ticket ID:** \`${ticketId}\`\n**Closed by:** ${interaction.user}\n**Closed at:** <t:${Math.floor(Date.now() / 1000)}:F>\n\n**This ticket has been closed.** The channel will be deleted in 10 seconds.\n\nThank you for using our support system!`,
+            )
+            .setColor(0xff0000)
+            .setTimestamp();
+
+        await interaction.reply({ embeds: [embed] });
+
+        // Send transcript to user via DM
+        try {
+            const user = await client.users.fetch(ticket.userId);
+            const transcriptEmbed = new EmbedBuilder()
+                .setTitle(`📋 Ticket Transcript - ${ticketId}`)
+                .setDescription(
+                    `**Ticket ID:** \`${ticketId}\`\n**Type:** ${TICKET_TYPES[ticket.type]?.name || "Unknown"}\n**Closed:** <t:${Math.floor(Date.now() / 1000)}:F>\n\nHere is the transcript of your support ticket:`,
+                )
+                .setColor(0x808080)
+                .setTimestamp();
+
+            if (transcript && transcript.length > 0) {
+                const { AttachmentBuilder } = require("discord.js");
+                const attachment = new AttachmentBuilder(
+                    Buffer.from(transcript, "utf8"),
+                    { name: `ticket-${ticketId}-transcript.txt` },
+                );
+
+                await user.send({
+                    embeds: [transcriptEmbed],
+                    files: [attachment],
+                });
+            } else {
+                await user.send({ embeds: [transcriptEmbed] });
+            }
+        } catch (error) {
+            console.log(
+                "Could not send transcript to user via DM:",
+                error.message,
+            );
+        }
+
+        // Log the closure
+        await logTicketAction(
+            ticketId,
+            "closed",
+            interaction.user,
+            `Closed by ${isAdmin ? "admin" : "user"} - Channel will be deleted`,
+        );
+
+        // Delete the ticket channel after 10 seconds
+        setTimeout(async () => {
+            try {
+                const channel = client.channels.cache.get(ticket.channelId);
+                if (channel) {
+                    await channel.delete();
+                    console.log(`✅ Ticket channel ${channel.name} deleted successfully`);
+                }
+            } catch (error) {
+                console.log("Could not delete ticket channel:", error.message);
+            }
+        }, 10000);
+
+        // Remove from active tickets and save
+        activeTickets.delete(ticketId);
+        await saveTicketData();
+    } catch (error) {
+        console.error("Error closing ticket:", error);
+        await interaction.reply({
+            content: "❌ An error occurred while closing the ticket.",
+            ephemeral: true,
+        });
+    }
+}
+
+async function createChannelTranscript(ticket) {
+    try {
+        const config = TICKET_TYPES[ticket.type];
+        const user = await client.users.fetch(ticket.userId);
+        const channel = client.channels.cache.get(ticket.channelId);
+
+        let transcript = `TICKET TRANSCRIPT\n`;
+        transcript += `==================\n`;
+        transcript += `Ticket ID: ${ticket.id}\n`;
+        transcript += `User: ${user.tag} (${user.id})\n`;
+        transcript += `Type: ${config?.name || "Unknown"}\n`;
+        transcript += `Category: ${config?.category || "Unknown"}\n`;
+        transcript += `Channel: #${channel?.name || "deleted-channel"}\n`;
+        transcript += `Created: ${new Date(ticket.createdAt).toLocaleString()}\n`;
+        transcript += `Closed: ${new Date().toLocaleString()}\n`;
+        transcript += `Status: ${ticket.status}\n`;
+
+        if (ticket.claimedBy) {
+            try {
+                const claimedUser = await client.users.fetch(ticket.claimedBy);
+                transcript += `Claimed by: ${claimedUser.tag} (${claimedUser.id})\n`;
+            } catch {
+                transcript += `Claimed by: ${ticket.claimedBy}\n`;
+            }
+        }
+
+        transcript += `\n==================\n`;
+        transcript += `CONVERSATION LOG\n`;
+        transcript += `==================\n\n`;
+
+        if (channel) {
+            try {
+                const messages = await channel.messages.fetch({ limit: 100 });
+                const sortedMessages = messages.sort(
+                    (a, b) => a.createdTimestamp - b.createdTimestamp,
+                );
+
+                for (const msg of sortedMessages.values()) {
+                    const author = msg.author;
+                    const timestamp = new Date(
+                        msg.createdTimestamp,
+                    ).toLocaleString();
+
+                    if (msg.embeds.length > 0 && msg.author.bot) {
+                        // Skip system embeds but keep user messages
+                        continue;
+                    }
+
+                    transcript += `[${timestamp}] ${author.tag}: ${msg.content}\n`;
+
+                    if (msg.attachments.size > 0) {
+                        transcript += `  Attachments: ${Array.from(
+                            msg.attachments.values(),
+                        )
+                            .map((att) => att.name)
+                            .join(", ")}\n`;
+                    }
+                    transcript += `\n`;
+                }
+            } catch (error) {
+                transcript += `Error fetching channel messages: ${error.message}\n`;
+            }
+        } else {
+            transcript += `Channel not found or already deleted.\n`;
+        }
+
+        transcript += `==================\n`;
+        transcript += `END OF TRANSCRIPT\n`;
+
+        return transcript;
+    } catch (error) {
+        console.error("Error creating channel transcript:", error);
+        return `Error creating transcript for ticket ${ticket.id}`;
+    }
+}
+
+async function handleClaimTicket(interaction, ticketId) {
+    try {
+        if (!hasAdminRole(interaction)) {
+            return await interaction.reply({
+                content: "❌ Only staff members can claim tickets!",
+                ephemeral: true,
+            });
+        }
+
+        const ticket = activeTickets.get(ticketId);
+        if (!ticket) {
+            return await interaction.reply({
+                content: "❌ Ticket not found!",
+                ephemeral: true,
+            });
+        }
+
+        if (ticket.claimedBy) {
+            const claimedUser = await client.users.fetch(ticket.claimedBy);
+            return await interaction.reply({
+                content: `❌ This ticket is already claimed by ${claimedUser.tag}!`,
+                ephemeral: true,
+            });
+        }
+
+        // Claim the ticket
+        ticket.claimedBy = interaction.user.id;
+        ticket.claimedAt = new Date().toISOString();
+
+        const embed = new EmbedBuilder()
+            .setTitle("👮 Ticket Claimed")
+            .setDescription(
+                `**Ticket ID:** \`${ticketId}\`\n**Claimed by:** ${interaction.user}\n**Status:** 🟡 In Progress\n\n${interaction.user} is now handling this ticket.`,
+            )
+            .setColor(0xffaa00)
+            .setTimestamp();
+
+        await interaction.reply({ embeds: [embed] });
+        await logTicketAction(
+            ticketId,
+            "claimed",
+            interaction.user,
+            `Ticket claimed by staff member`,
+        );
+    } catch (error) {
+        console.error("Error claiming ticket:", error);
+        await interaction.reply({
+            content: "❌ An error occurred while claiming the ticket.",
+            ephemeral: true,
+        });
+    }
+}
+
+async function handleCloseTicketCommand(interaction) {
+    // For slash command, check if user has an active ticket
+    const userTicket = Array.from(activeTickets.values()).find(
+        (ticket) =>
+            ticket.userId === interaction.user.id && ticket.status === "open",
+    );
+
+    if (!userTicket) {
+        return await interaction.reply({
+            content: "❌ You don't have any active tickets to close!",
+            ephemeral: true,
+        });
+    }
+
+    await handleCloseTicket(interaction, userTicket.id);
+}
+
+async function handleTicketInfo(interaction) {
+    // For slash command, show user's active ticket info
+    const userTicket = Array.from(activeTickets.values()).find(
+        (ticket) =>
+            ticket.userId === interaction.user.id && ticket.status === "open",
+    );
+
+    if (!userTicket) {
+        return await interaction.reply({
+            content: "❌ You don't have any active tickets!",
+            ephemeral: true,
+        });
+    }
+
+    await handleTicketInfoButton(interaction, userTicket.id);
+}
+
+async function handleTicketInfoButton(interaction, ticketId) {
+    try {
+        const ticket = activeTickets.get(ticketId);
+        if (!ticket) {
+            return await interaction.reply({
+                content: "❌ Ticket not found!",
+                ephemeral: true,
+            });
+        }
+
+        const config = TICKET_TYPES[ticket.type];
+        const creator = await client.users.fetch(ticket.userId);
+        let claimedInfo = "None";
+
+        if (ticket.claimedBy) {
+            const claimedUser = await client.users.fetch(ticket.claimedBy);
+            claimedInfo = `${claimedUser.tag} (<t:${Math.floor(new Date(ticket.claimedAt).getTime() / 1000)}:R>)`;
+        }
+
+        const embed = new EmbedBuilder()
+            .setTitle("ℹ️ Ticket Information")
+            .setDescription(`**Ticket ID:** \`${ticket.id}\``)
+            .addFields(
+                { name: "👤 Creator", value: `${creator.tag}`, inline: true },
+                { name: "📝 Type", value: config.name, inline: true },
+                {
+                    name: "📊 Status",
+                    value: ticket.status === "open" ? "🟢 Open" : "🔴 Closed",
+                    inline: true,
+                },
+                { name: "👮 Claimed By", value: claimedInfo, inline: true },
+                {
+                    name: "📅 Created",
+                    value: `<t:${Math.floor(new Date(ticket.createdAt).getTime() / 1000)}:R>`,
+                    inline: true,
+                },
+                { name: "📂 Category", value: config.category, inline: true },
+                {
+                    name: "💬 Messages",
+                    value: `${ticket.messages?.length || 0}`,
+                    inline: true,
+                },
+                { name: "📍 Location", value: "DM-based ticket", inline: true },
+            )
+            .setColor(config.color)
+            .setThumbnail(creator.displayAvatarURL())
+            .setTimestamp();
+
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+    } catch (error) {
+        console.error("Error getting ticket info:", error);
+        await interaction.reply({
+            content: "❌ An error occurred while fetching ticket information.",
+            ephemeral: true,
+        });
+    }
+}
+
+async function handleAdminRespondButton(interaction, ticketId) {
+    try {
+        const ticket = activeTickets.get(ticketId);
+        if (!ticket) {
+            return await interaction.reply({
+                content: "❌ Ticket not found!",
+                ephemeral: true,
+            });
+        }
+
+        const modal = new ModalBuilder()
+            .setCustomId(`admin_response_${ticketId}`)
+            .setTitle(`Respond to Ticket ${ticketId}`);
+
+        const responseInput = new TextInputBuilder()
+            .setCustomId("response_message")
+            .setLabel("Your Response to User")
+            .setStyle(TextInputStyle.Paragraph)
+            .setPlaceholder("Type your response to the user here...")
+            .setRequired(true)
+            .setMaxLength(2000);
+
+        modal.addComponents(
+            new ActionRowBuilder().addComponents(responseInput),
+        );
+        await interaction.showModal(modal);
+    } catch (error) {
+        console.error("Error showing admin response modal:", error);
+        await interaction.reply({
+            content: "❌ An error occurred.",
+            ephemeral: true,
+        });
+    }
+}
+
+async function sendTicketPanel() {
+    const ticketChannel = client.channels.cache.get(CHANNELS.tickets);
+    if (ticketChannel) {
+        const embed = new EmbedBuilder()
+            .setTitle("🎫 Get Support")
+            .setDescription(
+                "**Click on the button corresponding to the type of ticket you wish to open.**\n\nOur support team is here to help you with any issues or questions you may have. Please select the appropriate category below to create your support ticket.",
+            )
+            .addFields(
+                {
+                    name: "💬 Report a user",
+                    value: "Report inappropriate behavior, rule violations, or other user-related issues.",
+                    inline: false,
+                },
+                {
+                    name: "👁️ Ban Appeal",
+                    value: "Appeal a ban or punishment you believe was unfair or incorrect.",
+                    inline: false,
+                },
+                {
+                    name: "❓ Questions!",
+                    value: "General questions about the server, rules, or how things work.",
+                    inline: false,
+                },
+            )
+            .setColor(0x0099ff)
+            .setThumbnail(
+                "https://cdn.discordapp.com/attachments/1000000000000000000/1000000000000000000/ticket-icon.png",
+            )
+            .setFooter({
+                text: "Support tickets are monitored by our staff team",
+            })
+            .setTimestamp();
+
+        const selectMenu = createTicketSelectMenu();
+
+        await ticketChannel.send({
+            embeds: [embed],
+            components: [selectMenu],
+        });
+        console.log("✅ Ticket support panel sent");
     }
 }
 
 async function cleanupGiftCardSupportTicketInteractions() {
     // Specific cleanup for gift card support ticket interactions
     console.log("🧹 Starting Gift Card Support Ticket interaction cleanup...");
-    
+
     const giftCardChannel = client.channels.cache.get(CHANNELS.gift_cards);
-    const verificationChannel = client.channels.cache.get(CHANNELS.gift_card_verification);
-    
-    const channelsToClean = [giftCardChannel, verificationChannel].filter(Boolean);
-    
+    const verificationChannel = client.channels.cache.get(
+        CHANNELS.gift_card_verification,
+    );
+
+    const channelsToClean = [giftCardChannel, verificationChannel].filter(
+        Boolean,
+    );
+
     for (const channel of channelsToClean) {
         try {
-            console.log(`🧹 Cleaning gift card support ticket interactions in: ${channel.name}`);
-            
+            console.log(
+                `🧹 Cleaning gift card support ticket interactions in: ${channel.name}`,
+            );
+
             let totalCleaned = 0;
             let lastMessageId = null;
-            
+
             while (true) {
                 const fetchOptions = { limit: 100 };
                 if (lastMessageId) {
                     fetchOptions.before = lastMessageId;
                 }
-                
+
                 const fetched = await channel.messages.fetch(fetchOptions);
                 if (fetched.size === 0) break;
-                
+
                 const ticketMessages = fetched.filter((msg) => {
                     const content = msg.content.toLowerCase();
                     const hasEmbeds = msg.embeds.length > 0;
-                    
+
                     // Specifically target gift card support ticket related messages
                     const supportTicketPatterns = [
                         "gift card support ticket",
@@ -4895,49 +6006,62 @@ async function cleanupGiftCardSupportTicketInteractions() {
                         "redeem gift card",
                         "convert points",
                     ];
-                    
-                    const hasTicketPattern = supportTicketPatterns.some(pattern => 
-                        content.includes(pattern)
+
+                    const hasTicketPattern = supportTicketPatterns.some(
+                        (pattern) => content.includes(pattern),
                     );
-                    
+
                     // Check for ticket-related embeds
-                    const hasTicketEmbed = msg.embeds.some(embed => 
-                        embed.title?.includes("Support Ticket") ||
-                        embed.title?.includes("Gift Card") ||
-                        embed.description?.includes("support ticket") ||
-                        embed.description?.includes("admin approval")
+                    const hasTicketEmbed = msg.embeds.some(
+                        (embed) =>
+                            embed.title?.includes("Support Ticket") ||
+                            embed.title?.includes("Gift Card") ||
+                            embed.description?.includes("support ticket") ||
+                            embed.description?.includes("admin approval"),
                     );
-                    
-                    return hasTicketPattern || hasTicketEmbed || 
-                           (msg.author.bot && hasEmbeds && 
-                            msg.embeds.some(e => e.title?.includes("Gift Card")));
+
+                    return (
+                        hasTicketPattern ||
+                        hasTicketEmbed ||
+                        (msg.author.bot &&
+                            hasEmbeds &&
+                            msg.embeds.some((e) =>
+                                e.title?.includes("Gift Card"),
+                            ))
+                    );
                 });
-                
+
                 if (ticketMessages.size > 0) {
                     // Delete ticket-related messages
                     for (const msg of ticketMessages.values()) {
                         try {
                             await msg.delete();
                             totalCleaned++;
-                            await new Promise(resolve => setTimeout(resolve, 500));
+                            await new Promise((resolve) =>
+                                setTimeout(resolve, 500),
+                            );
                         } catch (error) {
                             // Ignore delete errors
                         }
                     }
                 }
-                
+
                 lastMessageId = fetched.last()?.id;
                 if (fetched.size < 100) break;
-                
-                await new Promise(resolve => setTimeout(resolve, 1000));
+
+                await new Promise((resolve) => setTimeout(resolve, 1000));
             }
-            
+
             if (totalCleaned > 0) {
-                console.log(`✅ Cleaned ${totalCleaned} gift card support ticket interactions from ${channel.name}`);
+                console.log(
+                    `✅ Cleaned ${totalCleaned} gift card support ticket interactions from ${channel.name}`,
+                );
             }
-            
         } catch (error) {
-            console.log(`❌ Error cleaning gift card support tickets in ${channel.name}:`, error.message);
+            console.log(
+                `❌ Error cleaning gift card support tickets in ${channel.name}:`,
+                error.message,
+            );
         }
     }
 }
@@ -4947,9 +6071,15 @@ async function sendStartupPanels() {
     console.log("🧹 Phase 1: Complete channel cleanup");
     await cleanupOldPanels();
 
+    // AUTOMATIC DEEP CLEANING of admin reports channel (1392501395369885698)
+    console.log(
+        "🧹 Phase 1a: AUTOMATIC DEEP CLEANING of admin reports channel...",
+    );
+    await performCompleteAdminChannelCleanup();
+
     // Special complete cleanup for gift cards channel
     console.log("🧹 Phase 1b: Complete gift cards channel cleanup...");
-    await performCompleteChannelCleanup("1387023764012797972");
+    await performCompleteChannelCleanup(CHANNELS.gift_cards);
 
     // Phase 1c: Specific cleanup for gift card support ticket interactions
     console.log("🧹 Phase 1c: Gift card support ticket interaction cleanup...");
@@ -4964,18 +6094,15 @@ async function sendStartupPanels() {
     await sendAdminGiftCardPanel();
     await sendPointDropTicketPanel();
     await sendAdminTrackingPanel(); // Add admin tracking panel
+    await sendTicketPanel(); // Add ticket support panel
 
     console.log(
         "✅ Bot startup sequence completed - All systems fresh and operational!",
     );
 }
 
-// With this (hardcoded, as requested):
-client.login(
-    "DISCOR_BOT_TOKEN",
-);
-//
-// Recommended secure approach (using environment variable):
-// client.login(process.env.DISCORD_TOKEN);
+// Secure approach using environment variable from Secrets:
+const token = process.env.DISCORD_TOKEN || "bot_token";
+client.login(token);
 
 ///
